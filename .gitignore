@@ -1,0 +1,25 @@
+# Claude Code
+CLAUDE.md
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.env
+.venv/
+venv/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+
+# Temp
+temp/
+*.tmp
+*.log
+
+# OS
+.DS_Store
+Thumbs.db
+연구계획서.pdf
