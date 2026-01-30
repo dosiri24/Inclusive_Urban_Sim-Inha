@@ -13,6 +13,8 @@ logger = logging.getLogger("debate.parser")
 
 def _strip_markdown(text: str) -> str:
     """Strip markdown code blocks from LLM response."""
+    if text is None:
+        return ""
     text = text.strip()
     # Remove ```json or ``` wrapper
     if text.startswith("```"):

@@ -5,6 +5,7 @@ from .chatgpt import ChatGPTLLM
 from .claude import ClaudeLLM
 from .kimi import KimiLLM
 from .exaone import ExaoneLLM
+from .base import is_enabled
 
 LLM_MAP = {
     "gemini": GeminiLLM,
@@ -13,6 +14,19 @@ LLM_MAP = {
     "kimi": KimiLLM,
     "exaone": ExaoneLLM,
 }
+
+PROVIDER_MAP = {
+    "gemini": "google",
+    "chatgpt": "openai",
+    "claude": "anthropic",
+    "kimi": "moonshot",
+    "exaone": "exaone",
+}
+
+
+def get_enabled_models() -> list:
+    """Return list of model names that are enabled via env vars."""
+    return [name for name, provider in PROVIDER_MAP.items() if is_enabled(provider)]
 
 
 def get_llm(model_name: str):

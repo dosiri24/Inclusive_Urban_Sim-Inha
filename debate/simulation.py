@@ -5,19 +5,40 @@ Main controller for running multi-agent debate simulation.
 Handles agent creation, debate flow, and logging.
 """
 
+import csv
 import random
 import logging
 from pathlib import Path
+from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from agent_api import Agent, Memory
-from llm_api import LLM_MAP
+from llm_api import LLM_MAP, get_enabled_models
 from .config import N_ROUNDS, N_AGENTS, N_VULNERABLE, PROMPTS_DIR, OUTPUT_DIR
 from .persona import generate_all_personas
 from .parser import parse_response, parse_think, parse_initial_opinion
 from .logger import DebateLogger
 
 logger = logging.getLogger("debate.simulation")
+
+
+def setup_file_logger(output_dir: str, set_id: int, level: int):
+    """Setup file handler for all logs."""
+    log_dir = Path(output_dir)
+    log_dir.mkdir(parents=True, exist_ok=True)
+
+    log_path = log_dir / f"set{set_id}_lv{level}.log"
+
+    file_handler = logging.FileHandler(log_path, encoding="utf-8")
+    file_handler.setLevel(logging.DEBUG)
+    file_handler.setFormatter(logging.Formatter(
+        "%(asctime)s [%(levelname)s] %(name)s: %(message)s"
+    ))
+
+    root_logger = logging.getLogger()
+    root_logger.addHandler(file_handler)
+
+    return log_path
 
 
 def _load_prompt_file(path: str) -> str:
@@ -106,8 +127,8 @@ class DebateSimulation:
         # Generate personas
         self.personas = generate_all_personas(n_agents, n_vulnerable)
 
-        # Assign models to each agent
-        available_models = list(LLM_MAP.keys())
+        # Assign models to each agent (only enabled ones)
+        available_models = get_enabled_models()
         if self.fixed_model:
             # Use specified model for all agents (testing)
             self.agent_models = {
@@ -143,7 +164,11 @@ class DebateSimulation:
         # Initialize logger
         self.logger = DebateLogger(set_id, level, output_dir)
 
+        # Setup file logger for all logs
+        self.log_path = setup_file_logger(output_dir, set_id, level)
+
         logger.info(f"Simulation initialized: set={set_id}, level={level}, agents={n_agents}")
+        logger.info(f"Log file: {self.log_path}")
 
     def run(self):
         """
@@ -183,6 +208,7 @@ class DebateSimulation:
         initial_turn = 1
         for agent_id in agent_ids:
             opinion = initial_opinions[agent_id]
+            self.agents[agent_id]["initial_stance"] = opinion["입장"]
             self.agents[agent_id]["agent"].memory.add_think(
                 f"[사전 의견] 입장: {opinion['입장']}, 이유: {opinion['생각']}"
             )
@@ -199,6 +225,9 @@ class DebateSimulation:
             logger.info(f"{agent_id} initial stance: {opinion['입장']}")
 
         self.logger.save()
+
+        # Save agent list with initial opinions
+        self._save_agent_list(initial_opinions)
 
         for round_num in range(1, self.n_rounds + 1):
             logger.info(f"=== Round {round_num} started ===")
@@ -315,3 +344,48 @@ class DebateSimulation:
             self.logger.save()
 
         logger.info(f"Simulation completed. Logs saved.")
+
+    def _save_agent_list(self, initial_opinions: dict):
+        """Save agent list with personas and initial opinions to CSV."""
+        output_path = Path(self.output_dir)
+        output_path.mkdir(parents=True, exist_ok=True)
+
+        agent_list_path = output_path / f"set{self.set_id}_lv{self.level}_agents.csv"
+
+        columns = [
+            "agent_id", "model", "is_vulnerable", "initial_stance",
+            "연령대", "성별", "직업", "주거유형", "자가여부",
+            "소득수준", "거주기간", "가구구성",
+            "개방성", "성실성", "외향성", "친화성", "신경성"
+        ]
+
+        rows = []
+        for persona in self.personas:
+            agent_id = persona["agent_id"]
+            bigfive = persona["BigFive"]
+            rows.append({
+                "agent_id": agent_id,
+                "model": self.agents[agent_id]["model"],
+                "is_vulnerable": persona["is_vulnerable"],
+                "initial_stance": initial_opinions[agent_id]["입장"],
+                "연령대": persona["연령대"],
+                "성별": persona["성별"],
+                "직업": persona["직업"],
+                "주거유형": persona["주거유형"],
+                "자가여부": persona["자가여부"],
+                "소득수준": persona["소득수준"],
+                "거주기간": persona["거주기간"],
+                "가구구성": persona["가구구성"],
+                "개방성": bigfive["개방성"],
+                "성실성": bigfive["성실성"],
+                "외향성": bigfive["외향성"],
+                "친화성": bigfive["친화성"],
+                "신경성": bigfive["신경성"]
+            })
+
+        with open(agent_list_path, "w", newline="", encoding="utf-8") as f:
+            writer = csv.DictWriter(f, fieldnames=columns)
+            writer.writeheader()
+            writer.writerows(rows)
+
+        logger.info(f"Agent list saved: {agent_list_path}")

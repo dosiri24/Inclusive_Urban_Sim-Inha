@@ -17,14 +17,19 @@ class GeminiLLM(BaseLLM):
             raise ValueError("GOOGLE_API_KEY is not set")
 
         from google import genai
+        from google.genai import types
         self.client = genai.Client(api_key=api_key)
+        self.config = types.GenerateContentConfig(
+            automatic_function_calling=types.AutomaticFunctionCallingConfig(disable=True)
+        )
         logger.debug("Gemini client initialized")
 
     def chat(self, messages: list) -> str:
         contents = self._to_gemini_format(messages)
         response = self.client.models.generate_content(
             model=MODEL_NAME,
-            contents=contents
+            contents=contents,
+            config=self.config
         )
         return response.text
 
