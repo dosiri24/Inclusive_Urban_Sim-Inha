@@ -31,9 +31,25 @@ class GeminiLLM(BaseLLM):
     def _to_gemini_format(self, messages: list) -> list:
         """Gemini uses role: user/model, parts: [{text}]"""
         result = []
+        system_text = ""
+
+        # extract system message
+        for msg in messages:
+            if msg["role"] == "system":
+                system_text = msg["content"]
+                break
+
+        # convert messages
         for msg in messages:
             if msg["role"] == "system":
                 continue
             role = "model" if msg["role"] == "assistant" else "user"
-            result.append({"role": role, "parts": [{"text": msg["content"]}]})
+            content = msg["content"]
+
+            # prepend system to first user message
+            if role == "user" and system_text and not result:
+                content = system_text + "\n\n" + content
+
+            result.append({"role": role, "parts": [{"text": content}]})
+
         return result
