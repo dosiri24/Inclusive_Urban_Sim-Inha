@@ -8,12 +8,13 @@ Handles agent creation, debate flow, and logging.
 import random
 import logging
 from pathlib import Path
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from agent_api import Agent, Memory
 from llm_api import LLM_MAP
 from .config import N_ROUNDS, N_AGENTS, N_VULNERABLE, PROMPTS_DIR, OUTPUT_DIR
 from .persona import generate_all_personas
-from .parser import parse_response, parse_think
+from .parser import parse_response, parse_think, parse_initial_opinion
 from .logger import DebateLogger
 
 logger = logging.getLogger("debate.simulation")
@@ -74,7 +75,8 @@ class DebateSimulation:
         n_agents: int = N_AGENTS,
         n_vulnerable: int = N_VULNERABLE,
         prompts_dir: str = PROMPTS_DIR,
-        output_dir: str = OUTPUT_DIR
+        output_dir: str = OUTPUT_DIR,
+        model: str = None
     ):
         """
         Initialize debate simulation.
@@ -87,7 +89,9 @@ class DebateSimulation:
             n_vulnerable: Number of vulnerable agents
             prompts_dir: Directory containing prompt files
             output_dir: Directory for output CSV files
+            model: If specified, all agents use this model (for testing)
         """
+        self.fixed_model = model
         self.set_id = set_id
         self.level = level
         self.n_rounds = n_rounds
@@ -102,12 +106,20 @@ class DebateSimulation:
         # Generate personas
         self.personas = generate_all_personas(n_agents, n_vulnerable)
 
-        # Assign random models to each agent
+        # Assign models to each agent
         available_models = list(LLM_MAP.keys())
-        self.agent_models = {
-            p["agent_id"]: random.choice(available_models)
-            for p in self.personas
-        }
+        if self.fixed_model:
+            # Use specified model for all agents (testing)
+            self.agent_models = {
+                p["agent_id"]: self.fixed_model
+                for p in self.personas
+            }
+        else:
+            # Random assignment
+            self.agent_models = {
+                p["agent_id"]: random.choice(available_models)
+                for p in self.personas
+            }
 
         # Create agents with Memory
         self.agents = {}
@@ -146,8 +158,53 @@ class DebateSimulation:
         """
         agent_ids = [p["agent_id"] for p in self.personas]
 
+        # === 0. Pre-debate: Form initial opinions (parallel) ===
+        logger.info("=== Forming initial opinions ===")
+
+        initial_task = (
+            "토론이 시작되기 전입니다. 아직 다른 주민의 의견을 듣지 않은 상태에서, "
+            "당신의 페르소나와 상황을 바탕으로 주안2동 재개발에 대한 당신의 입장을 정하세요. "
+            f'{{"입장": "찬성" 또는 "반대", "생각": "..."}} JSON만 출력. 마크다운 금지.'
+        )
+
+        def form_initial_opinion(agent_id):
+            agent = self.agents[agent_id]["agent"]
+            response = agent.respond(initial_task)
+            return agent_id, parse_initial_opinion(response)
+
+        with ThreadPoolExecutor(max_workers=len(agent_ids)) as executor:
+            futures = {executor.submit(form_initial_opinion, aid): aid for aid in agent_ids}
+            initial_opinions = {}
+            for future in as_completed(futures):
+                agent_id, parsed = future.result()
+                initial_opinions[agent_id] = parsed
+
+        # Store initial opinions in memory and log to CSV
+        initial_turn = 1
+        for agent_id in agent_ids:
+            opinion = initial_opinions[agent_id]
+            self.agents[agent_id]["agent"].memory.add_think(
+                f"[사전 의견] 입장: {opinion['입장']}, 이유: {opinion['생각']}"
+            )
+            # Log to think.csv with think_type="initial"
+            self.logger.log_think(
+                round=0,  # Round 0 = pre-debate
+                turn=initial_turn,
+                agent_id=agent_id,
+                think_type="initial",
+                상대의견=opinion["입장"],  # Store stance in 상대의견 field
+                생각=opinion["생각"]
+            )
+            initial_turn += 1
+            logger.info(f"{agent_id} initial stance: {opinion['입장']}")
+
+        self.logger.save()
+
         for round_num in range(1, self.n_rounds + 1):
             logger.info(f"=== Round {round_num} started ===")
+
+            # Global think counter for unique codes within round
+            think_turn = 1
 
             for turn, speaker_id in enumerate(agent_ids, start=1):
                 # === 1. Speaker's turn ===
@@ -156,7 +213,7 @@ class DebateSimulation:
                 speaker_persona = speaker_data["persona"]
 
                 # Request speech
-                task = "당신의 발화 차례입니다. JSON 형식으로 응답하세요."
+                task = '당신의 발화 차례입니다. 반드시 {"발화": "...", "지목": "..." or null, "입장": "..."} JSON만 출력하세요.'
                 response = speaker_agent.respond(task)
                 parsed = parse_response(response)
 
@@ -181,63 +238,80 @@ class DebateSimulation:
                         other_agent = self.agents[other_id]["agent"]
                         other_agent.memory.add_conversation(speaker_id, parsed["발화"])
 
-                # === 3. Other agents react ===
-                think_turn = 1
-                for other_id in agent_ids:
-                    if other_id != speaker_id:
-                        other_agent = self.agents[other_id]["agent"]
+                # === 3. Other agents react (parallel) ===
+                other_ids = [aid for aid in agent_ids if aid != speaker_id]
+                think_task = (
+                    f"{speaker_id}의 발화(코드: {response_code}): "
+                    f"'{parsed['발화'][:100]}'\n"
+                    f'이 발화에 대한 생각을 {{"상대의견": "{response_code}", "생각": "..."}} JSON만 출력하세요.'
+                )
 
-                        think_task = (
-                            f"{speaker_id}의 발화(코드: {response_code}): "
-                            f"'{parsed['발화'][:100]}...'\n"
-                            f"이 발화에 대한 당신의 생각을 JSON 형식으로 응답하세요."
-                        )
-                        think_response = other_agent.respond(think_task)
-                        think_parsed = parse_think(think_response)
+                def do_think(other_id):
+                    agent = self.agents[other_id]["agent"]
+                    response = agent.respond(think_task)
+                    return other_id, parse_think(response)
 
-                        # Add to memory
-                        other_agent.memory.add_think(think_parsed["생각"])
+                with ThreadPoolExecutor(max_workers=len(other_ids)) as executor:
+                    futures = {executor.submit(do_think, oid): oid for oid in other_ids}
+                    results = {}
+                    for future in as_completed(futures):
+                        other_id, think_parsed = future.result()
+                        results[other_id] = think_parsed
 
-                        # Log think
-                        self.logger.log_think(
-                            round=round_num,
-                            turn=think_turn,
-                            agent_id=other_id,
-                            think_type="reaction",
-                            상대의견=think_parsed["상대의견"],
-                            생각=think_parsed["생각"]
-                        )
+                # Process results in order
+                for other_id in other_ids:
+                    think_parsed = results[other_id]
+                    self.agents[other_id]["agent"].memory.add_think(think_parsed["생각"])
+                    self.logger.log_think(
+                        round=round_num,
+                        turn=think_turn,
+                        agent_id=other_id,
+                        think_type="reaction",
+                        상대의견=think_parsed["상대의견"],
+                        생각=think_parsed["생각"]
+                    )
+                    think_turn += 1
 
-                        think_turn += 1
+                # Auto-save after each speaker's turn
+                self.logger.save()
 
-            # === 4. End of round reflection ===
+            # === 4. End of round reflection (parallel) ===
             logger.info(f"=== Round {round_num} reflection ===")
 
-            for reflect_turn, agent_id in enumerate(agent_ids, start=1):
-                agent_data = self.agents[agent_id]
-                agent = agent_data["agent"]
+            reflection_task = (
+                f"{round_num}라운드가 끝났습니다. "
+                f"지금까지 논의를 당신의 페르소나 관점에서 정리하세요. "
+                f'반드시 {{"생각": "..."}} JSON만 출력하세요. 상대의견 필드는 포함하지 마세요.'
+            )
 
-                reflection_task = (
-                    f"{round_num}라운드가 끝났습니다. "
-                    f"지금까지 논의를 당신의 페르소나 관점에서 정리하세요. "
-                    f"JSON 형식으로 응답하세요."
-                )
-                reflection_response = agent.respond(reflection_task)
-                reflection_parsed = parse_think(reflection_response)
+            def do_reflect(agent_id):
+                agent = self.agents[agent_id]["agent"]
+                response = agent.respond(reflection_task)
+                return agent_id, parse_think(response)
 
-                # Add to memory
-                agent.memory.add_think(reflection_parsed["생각"])
+            with ThreadPoolExecutor(max_workers=len(agent_ids)) as executor:
+                futures = {executor.submit(do_reflect, aid): aid for aid in agent_ids}
+                results = {}
+                for future in as_completed(futures):
+                    agent_id, reflection_parsed = future.result()
+                    results[agent_id] = reflection_parsed
 
-                # Log reflection
+            # Process results in order
+            reflect_turn = 1
+            for agent_id in agent_ids:
+                reflection_parsed = results[agent_id]
+                self.agents[agent_id]["agent"].memory.add_think(reflection_parsed["생각"])
                 self.logger.log_think(
                     round=round_num,
-                    turn=reflect_turn,
+                    turn=think_turn + reflect_turn,
                     agent_id=agent_id,
                     think_type="reflection",
                     상대의견=None,
                     생각=reflection_parsed["생각"]
                 )
+                reflect_turn += 1
 
-        # === 5. Save all logs ===
-        self.logger.save()
+            # Auto-save after reflections
+            self.logger.save()
+
         logger.info(f"Simulation completed. Logs saved.")
