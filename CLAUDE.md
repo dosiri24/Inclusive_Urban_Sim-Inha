@@ -1,119 +1,66 @@
-# CLAUDE.md
+# CLAUDE.md - 개발 규칙
 
-## Development Rules (Top Priority)
+## 개발 원칙
 
-| # | Rule |
-|---|------|
-| 1 | **Implement only requested features**. No unrequested features or extensibility-oriented code |
-| 2 | **Thorough comments** on all functions/classes for future modifications |
-| 3 | **Unlimited tokens guaranteed** by user. Maximize MCP tools usage, read entire files when analyzing code |
-| 4 | **Working code only**. No mocking, test prints, or placeholder outputs |
-| 5 | **Research first** via MCP tools when coding AI/trending tech topics |
-| 6 | **Thorough logging**. Reference logs when modifying code |
-| 7 | **Test before adding** any feature to production code |
-| 8 | **Concise + meaningful** names for functions, classes, files |
-| 9 | **Expert-level code**, beginner-level explanations |
-| 10 | **No code hardcopy** in plans. Focus on what/how/why |
-| 11 | **Plan first, then develop**. Sync all changes back to plan document |
-| 12 | **No unrequested error handling**. Return errors only for exceptions |
-| 13 | **Documents in English** (except proper nouns). **Code comments in simple English**. **Conversations strictly in Korean** (English terms must have Korean translation in parentheses, or use Korean only) |
-| 14 | **Follow DEVELOPMENT_PLAN.md**. All development must adhere to the plan document |
-| 15 | **Detailed implementation plan required** before starting any new Phase. Write specific implementation details, expected outputs, and acceptance criteria |
-| 16 | **LLM code requires verification**. When writing LLM-related code: (1) Research latest models/libraries via MCP tools, (2) Test with actual API calls, (3) Only then integrate into production code |
+### 1. 최소 구현 원칙
+- 지시받은 기능만 구현
+- 요청하지 않은 기능이나 확장성을 염두에 둔 코드 작성 **절대 금지**
 
----
+### 2. 주석 철저
+- 모든 함수 및 클래스에 주석을 철저히 작성
+- 차기 수정에 대비한 문서화
 
-## Project Overview
+### 3. 무제한 리소스 활용
+- 토큰 사용에 제약 없음 (사용자 보증)
+- MCP 도구 최대한 활용
+- 코드 분석 시 일부만 읽지 않고 **전체를 읽음**
 
-| Item | Content |
-|------|---------|
-| Title | LLM Multi-Agent Simulation for Inclusive Citizen Participation: Comparing System Architectures |
-| Duration | 6 months (1-3: Implementation / 4: Simulation / 5-6: Analysis & Paper) |
-| Goal | Analyze how **technical implementation of discussion methods** affects **inclusion of socially vulnerable groups' opinions** |
+### 4. 실제 동작 코드만 작성
+- 모킹 금지
+- 주석 처리된 테스트 코드 금지
+- `print` 함수를 이용한 테스트성 출력 **절대 금지**
 
-### Research Hypotheses
-- **H1**: Context separation → Independent expression of vulnerable groups' opinions → Higher inclusivity
-- **H2**: Multiple models → Diverse perspectives due to different bias patterns → Higher inclusivity
-- **H3**: Moderator agent → Balanced speaking opportunities → Higher inclusivity
+### 5. 최신 기술 리서치 우선
+- AI 등 기술적 트렌드가 빠른 주제 코딩 시
+- MCP 도구로 최신 모델, 기능, 방법론 리서치 후 작업
 
----
+### 6. 철저한 로깅
+- 로깅을 철저히 구현
+- 코드 수정 시 로그를 참고하여 수정
 
-## Experiment Design
+### 7. 테스트 후 구현
+- 기능을 실제 작업 코드에 추가할 때
+- 해당 기능에 대한 테스트를 먼저 진행
+- 검증된 방법으로 기능 구현
 
-### Main Experiment (Hypothesis Testing)
+### 8. 명명 규칙
+- 함수명, 클래스명, 코드파일 이름은 **간결하면서 핵심**이 담기게
 
-| Level | Method | Model | Hypothesis | Purpose |
-|-------|--------|-------|------------|---------|
-| Lv.1 | Single session, single model | Gemini 3 Flash | - | Reproduce Lee (2025), confirm limitations |
-| Lv.2 | Separate context, single model | Gemini 3 Flash | H1 | Test context separation effect |
-| Lv.3 | Separate context, multiple models | GPT, Claude, Gemini, Exaone, Kimi | H2 | Test model diversification effect |
-| Lv.4 | Lv.3 + Moderator agent | Multiple models | H3 | Test moderator role effect |
+### 9. 코드 품질 vs 설명 수준
+- 코드: **전문가 수준**으로 작성
+- 설명: **초보 개발자도 이해 가능**할 정도로 쉽게
 
-**Scale**: 80 discussions (20 sets × 4 levels), same agent group proceeds Lv.1→4 sequentially
+### 10. 계획서 작성 규칙
+- 코드 하드카피 첨부 금지
+- **'무엇을'**, **'어떻게'**, **'왜'**를 담는 데 집중
 
-### Supplementary Experiment
+### 11. 계획서 기반 개발
+- 모든 개발 및 구현 과정은 계획서 작성 후 이 문서를 준수하여 진행
+- 사용자와 상호작용하며 추가된 기능이나 수정 부분은 **반드시 계획서에 업데이트**
+- 실제 프로젝트 진행과 동기화
 
-| Level | Method | Model | Purpose |
-|-------|--------|-------|---------|
-| Lv.2-S | Separate context, single model | Exaone 4.0 | Compare Korean LLM vs Gemini (Lv.2) |
+### 12. 에러 핸들링 정책
+- 요청하지 않은 에러 핸들링 **금지**
+- 예외 상황에는 **에러 반환만** 원칙
 
-**Scale**: 20 discussions (20 sets × 1 level), uses same agent groups as main experiment
+### 13. 간결한 코드 작성
+- 주석은 "왜"를 설명할 때만 작성 (코드가 "무엇"을 하는지는 코드 자체로 표현)
+- docstring은 한 줄로 핵심만
+- 자명한 코드에 주석 금지 (예: `# API 호출` 같은 뻔한 주석)
+- 같은 내용 반복 설명 금지
 
-**Note**: Lv.2-S is an auxiliary experiment to explore whether Korean-specialized LLM (Exaone) shows different inclusivity patterns compared to Lv.2. Results will be reported separately from main hypothesis testing.
-
-### LLM Models
-
-| Provider | Model |
-|----------|-------|
-| Google | gemini-3-flash-preview |
-| OpenAI | GPT-5 mini |
-| Anthropic | Claude Haiku 4.5 |
-| Moonshot AI | kimi-k2-0905-preview |
-| LG AI Research | LGAI-EXAONE/K-EXAONE-236B-A23B |
-
----
-
-## Environment Setup
-
-### Paths
-
-| Item | Path |
-|------|------|
-| Git Repository | `D:\Users\INHA\Desktop\포용적 주민참여를 위한 LLM 다중 에이전트 시뮬레이션 기술적 구현에 따른 효과 비교\Inclusive_Urban_Sim-Inha` |
-| Papers Storage | `D:\Users\INHA\Desktop\논문\` |
-| Paper Reviews | `D:\Users\INHA\Desktop\논문 리뷰\` |
-
-### Python Execution
-
-```bash
-# Anaconda path (python command unavailable)
-"C:\ProgramData\Anaconda3\python.exe" script.py
-```
-
-### File Format Support
-
-| Format | Method |
-|--------|--------|
-| PDF | Claude direct read |
-| HWP/HWPX | `gethwp` library |
-| LNK | PowerShell to extract original path |
-
----
-
-## Folder Structure
-
-```
-Inclusive_Urban_Sim-Inha/
-├── CLAUDE.md
-├── PAPERS.md          # Paper reviews
-├── utils/             # Utilities (api_calculator.py, etc.)
-├── data/              # Demographics, regional data
-├── prompts/           # Agent profiles, discussion topics
-├── src/               # Simulation code
-├── results/           # Experiment results
-└── analysis/          # Analysis code
-```
-
----
-
-*Last Modified: 2026.01.28*
+### 14. YAGNI 원칙 준수
+- 지금 당장 필요한 기능만 구현
+- "나중에 필요할 것 같은" 코드 미리 작성 금지
+- 확장성, 유연성 미리 고려 금지 (필요할 때 추가)
+- 사용하지 않는 파라미터, 옵션, 분기 금지

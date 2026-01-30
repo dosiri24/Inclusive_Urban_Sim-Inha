@@ -1,0 +1,39 @@
+"""Google Gemini LLM"""
+
+import os
+from .base import BaseLLM, logger, is_enabled
+
+MODEL_NAME = "gemini-3-flash-preview"
+
+
+class GeminiLLM(BaseLLM):
+
+    def __init__(self):
+        if not is_enabled("google"):
+            raise ValueError("Google API is disabled")
+
+        api_key = os.getenv("GOOGLE_API_KEY")
+        if not api_key:
+            raise ValueError("GOOGLE_API_KEY is not set")
+
+        from google import genai
+        self.client = genai.Client(api_key=api_key)
+        logger.debug("Gemini client initialized")
+
+    def chat(self, messages: list) -> str:
+        contents = self._to_gemini_format(messages)
+        response = self.client.models.generate_content(
+            model=MODEL_NAME,
+            contents=contents
+        )
+        return response.text
+
+    def _to_gemini_format(self, messages: list) -> list:
+        """Gemini uses role: user/model, parts: [{text}]"""
+        result = []
+        for msg in messages:
+            if msg["role"] == "system":
+                continue
+            role = "model" if msg["role"] == "assistant" else "user"
+            result.append({"role": role, "parts": [{"text": msg["content"]}]})
+        return result
