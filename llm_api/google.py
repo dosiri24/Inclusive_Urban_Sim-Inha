@@ -40,7 +40,7 @@ def _get_client():
     return _client
 
 
-def call(model_id: str, memory: List[Dict[str, str]], question: str) -> str:
+def call(model_id: str, memory: List[Dict[str, str]], question: str, temperature: float = 0.7) -> str:
     """
     Calls Google Gemini API with the given parameters.
 
@@ -48,10 +48,13 @@ def call(model_id: str, memory: List[Dict[str, str]], question: str) -> str:
         model_id: The Gemini model identifier
         memory: Conversation history in standard format
         question: Current question/prompt
+        temperature: Sampling temperature (0.0-1.0)
 
     Returns:
         Model response as plain text string
     """
+    from google.genai import types
+
     client = _get_client()
 
     # Build contents list: history + current question
@@ -61,10 +64,16 @@ def call(model_id: str, memory: List[Dict[str, str]], question: str) -> str:
         "parts": [{"text": question}]
     })
 
+    # Configure generation parameters
+    config = types.GenerateContentConfig(
+        temperature=temperature
+    )
+
     # Call API
     response = client.models.generate_content(
         model=model_id,
-        contents=contents
+        contents=contents,
+        config=config
     )
 
     return response.text

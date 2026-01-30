@@ -10,19 +10,8 @@ vulnerable_type: housing
 - ownership: tenant
 - occupation: restaurant worker
 
-# Personality
-- assertiveness: 1
-- openness: 3
-- risk_tolerance: 2
-- community_orientation: 2
-
 # Economic
 - income_level: low
-- can_afford_contribution: false
-
-# State
-- economic_pressure: struggling
-- participation_tendency: passive
 
 # Context
 - information_access: low

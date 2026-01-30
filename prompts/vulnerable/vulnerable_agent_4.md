@@ -10,19 +10,8 @@ vulnerable_type: participation
 - ownership: owner
 - occupation: self-employed
 
-# Personality
-- assertiveness: 2
-- openness: 3
-- risk_tolerance: 2
-- community_orientation: 3
-
 # Economic
 - income_level: middle
-- can_afford_contribution: true
-
-# State
-- economic_pressure: moderate
-- participation_tendency: passive
 
 # Context
 - information_access: medium

@@ -15,7 +15,7 @@ import random
 
 ### 실험 설계 변수들
 NUM_AGENTS = 20 # 에이전트 수
-SAMPLES_PER_LV = 20 # 각 연구 조건별 샘플 수
+SAMPLES_PER_LV = 30 # 각 연구 조건별 샘플 수
 ROUNDS_PER_DEBATE = 3 # 토론 라운드 수
 
 TOKEN_SYSTEM_PROMPT = 500 # 에이전트 배경, 토론 의제 및 규칙 등
@@ -24,7 +24,7 @@ TOKEN_LOCAL = 1500 # 지역 맥락 정보
 TOKEN_FIXED = TOKEN_SYSTEM_PROMPT + TOKEN_PERSONA + TOKEN_LOCAL # 고정 토큰 수
 
 TOKEN_AGENT_OUTPUT = 400 # 에이전트 의견 제시 토큰 수
-TOKEN_AGENT_THINK = 100 # 상대의견별 에이전트 사고 과정 토큰 수
+TOKEN_AGENT_THINK = 200 # 상대의견별 에이전트 사고 과정 토큰 수
 TOKEN_MODERATOR_OUTPUT = 600 # 사회자 의견 정리 및 요약 토큰 수
 TOKEN_SHARED_OUTPUT = TOKEN_AGENT_OUTPUT # 다른 에이전트에게 공유되는 에이전트 의견 토큰 수
 

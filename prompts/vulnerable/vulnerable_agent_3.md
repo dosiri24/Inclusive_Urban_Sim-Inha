@@ -10,19 +10,8 @@ vulnerable_type: participation
 - ownership: owner
 - occupation: unemployed
 
-# Personality
-- assertiveness: 1
-- openness: 2
-- risk_tolerance: 1
-- community_orientation: 3
-
 # Economic
 - income_level: low
-- can_afford_contribution: false
-
-# State
-- economic_pressure: struggling
-- participation_tendency: passive
 
 # Context
 - information_access: low

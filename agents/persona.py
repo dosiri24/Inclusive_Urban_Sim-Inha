@@ -3,27 +3,25 @@ Persona System for Inclusive Urban Simulation
 
 This module provides persona generation, loading, and prompt conversion.
 - Generates 16 general agents with randomized attributes
-- Loads 4 vulnerable agents from markdown files
+- Loads vulnerable agents from markdown files in a folder
 - Converts personas to English prompts for LLM
 
 Usage:
     from agents import create_agent_group, persona_to_prompt
 
-    agents = create_agent_group(seed=42)  # Returns 20 Persona objects
+    agents = create_agent_group()  # Returns 20 Persona objects
     prompt = persona_to_prompt(agents[0])  # Returns English prompt string
 """
 
-import os
 import re
 import random
 import logging
-from typing import List, Dict, Optional
+from pathlib import Path
+from typing import List, Dict
 
 from .models import (
     Demographics,
-    Personality,
     Economic,
-    State,
     Context,
     Classification,
     Persona,
@@ -33,34 +31,23 @@ logger = logging.getLogger("agents.persona")
 
 
 # =============================================================================
-# Exception
-# =============================================================================
-
-class PersonaError(Exception):
-    """
-    Exception for persona module errors.
-    """
-    pass
-
-
-# =============================================================================
 # Sampling Distributions
 # =============================================================================
 
 # Categorical distributions for general agent generation
 DISTRIBUTIONS: Dict[str, Dict[str, float]] = {
-    "age_group": {"30s": 0.15, "40s": 0.20, "50s": 0.25, "60s": 0.25, "70s+": 0.15},
+    # Added 20s age group for inclusivity
+    "age_group": {"20s": 0.10, "30s": 0.15, "40s": 0.20, "50s": 0.25, "60s": 0.20, "70s+": 0.10},
     "gender": {"male": 0.48, "female": 0.52},
     "ownership": {"owner": 0.55, "tenant": 0.45},
     "income_level": {"low": 0.30, "middle": 0.50, "high": 0.20},
-    "economic_pressure": {"comfortable": 0.25, "moderate": 0.45, "struggling": 0.30},
-    "participation_tendency": {"active": 0.20, "moderate": 0.50, "passive": 0.30},
     "information_access": {"high": 0.30, "medium": 0.45, "low": 0.25},
     "community_engagement": {"active": 0.25, "moderate": 0.40, "minimal": 0.35},
 }
 
 # Occupation lists by age group
 OCCUPATIONS: Dict[str, List[str]] = {
+    "20s": ["university student", "graduate student", "office worker", "freelancer", "job seeker"],
     "30s": ["office worker", "self-employed", "professional", "freelancer", "public servant"],
     "40s": ["office worker", "self-employed", "professional", "public servant", "homemaker"],
     "50s": ["office worker", "self-employed", "professional", "public servant", "homemaker", "pre-retirement"],
@@ -68,153 +55,107 @@ OCCUPATIONS: Dict[str, List[str]] = {
     "70s+": ["retired", "unemployed", "part-time worker"],
 }
 
-# Section configuration for markdown parsing
-SECTION_FIELDS: Dict[str, List[str]] = {
-    "Demographics": ["age_group", "gender", "residence_years", "ownership", "occupation"],
-    "Personality": ["assertiveness", "openness", "risk_tolerance", "community_orientation"],
-    "Economic": ["income_level", "can_afford_contribution"],
-    "State": ["economic_pressure", "participation_tendency"],
-    "Context": ["information_access", "community_engagement"],
-}
-
 
 # =============================================================================
 # Sampling Functions
 # =============================================================================
 
-def sample_categorical(distribution: Dict[str, float], rng: random.Random) -> str:
+def _sample_categorical(distribution: Dict[str, float]) -> str:
     """
-    Samples a value from a categorical distribution.
+    Samples a value from a categorical distribution using random.choices.
 
     Args:
-        distribution: Dictionary mapping values to probabilities
-        rng: Random number generator instance
+        distribution: Dictionary mapping values to probabilities (e.g., {"male": 0.48, "female": 0.52})
 
     Returns:
         Sampled value from distribution
     """
     values = list(distribution.keys())
     weights = list(distribution.values())
-    return rng.choices(values, weights=weights, k=1)[0]
+    return random.choices(values, weights=weights, k=1)[0]
 
 
-def sample_residence_years(rng: random.Random) -> int:
+def _sample_residence_years(age_group: str) -> int:
     """
-    Samples residence years from normal distribution (mean=15, std=8, clipped to 1-40).
+    Samples residence years from normal distribution, adjusted by age group.
+    Younger age groups have shorter residence years on average.
 
     Args:
-        rng: Random number generator instance
+        age_group: Age category (20s, 30s, 40s, 50s, 60s, 70s+)
 
     Returns:
         Integer years of residence (1-40)
     """
-    years = rng.gauss(mu=15, sigma=8)
+    # Adjust mean based on age group
+    age_means = {
+        "20s": 5,
+        "30s": 10,
+        "40s": 15,
+        "50s": 20,
+        "60s": 25,
+        "70s+": 30,
+    }
+    mean = age_means.get(age_group, 15)
+    years = random.gauss(mu=mean, sigma=5)
     return max(1, min(40, int(round(years))))
-
-
-def determine_can_afford(income_level: str, economic_pressure: str, rng: random.Random) -> bool:
-    """
-    Determines if agent can afford contribution based on economic factors.
-
-    Args:
-        income_level: Income category (low, middle, high)
-        economic_pressure: Pressure level (comfortable, moderate, struggling)
-        rng: Random number generator instance
-
-    Returns:
-        Boolean indicating affordability
-    """
-    base_prob = {"low": 0.2, "middle": 0.6, "high": 0.9}[income_level]
-    modifier = {"comfortable": 0.1, "moderate": 0.0, "struggling": -0.2}[economic_pressure]
-    return rng.random() < max(0.0, min(1.0, base_prob + modifier))
 
 
 # =============================================================================
 # General Agent Generation
 # =============================================================================
 
-def generate_general_agent(agent_id: str, rng: random.Random) -> Persona:
+def generate_general_agents(n: int) -> List[Persona]:
     """
-    Generates a single general (non-vulnerable) agent.
-
-    Args:
-        agent_id: Unique identifier for this agent (e.g., "A01")
-        rng: Random number generator instance
-
-    Returns:
-        Complete Persona object with sampled attributes
-    """
-    # Sample demographics
-    age_group = sample_categorical(DISTRIBUTIONS["age_group"], rng)
-
-    demographics = Demographics(
-        age_group=age_group,
-        gender=sample_categorical(DISTRIBUTIONS["gender"], rng),
-        residence_years=sample_residence_years(rng),
-        ownership=sample_categorical(DISTRIBUTIONS["ownership"], rng),
-        occupation=rng.choice(OCCUPATIONS[age_group]),
-    )
-
-    # Sample personality
-    personality = Personality(
-        assertiveness=rng.randint(1, 5),
-        openness=rng.randint(1, 5),
-        risk_tolerance=rng.randint(1, 5),
-        community_orientation=rng.randint(1, 5),
-    )
-
-    # Sample economic
-    income_level = sample_categorical(DISTRIBUTIONS["income_level"], rng)
-    economic_pressure = sample_categorical(DISTRIBUTIONS["economic_pressure"], rng)
-
-    economic = Economic(
-        income_level=income_level,
-        can_afford_contribution=determine_can_afford(income_level, economic_pressure, rng),
-    )
-
-    # Sample state
-    state = State(
-        economic_pressure=economic_pressure,
-        participation_tendency=sample_categorical(DISTRIBUTIONS["participation_tendency"], rng),
-    )
-
-    # Sample context
-    context = Context(
-        information_access=sample_categorical(DISTRIBUTIONS["information_access"], rng),
-        community_engagement=sample_categorical(DISTRIBUTIONS["community_engagement"], rng),
-    )
-
-    # Classification (not vulnerable)
-    classification = Classification(
-        is_vulnerable=False,
-        vulnerable_type=None,
-        agent_id=agent_id,
-    )
-
-    return Persona(
-        demographics=demographics,
-        personality=personality,
-        economic=economic,
-        state=state,
-        context=context,
-        classification=classification,
-    )
-
-
-def generate_general_agents(n: int, seed: int) -> List[Persona]:
-    """
-    Generates multiple general agents with reproducible randomness.
+    Generates n general (non-vulnerable) agents with random attributes.
 
     Args:
         n: Number of agents to generate
-        seed: Random seed for reproducibility
 
     Returns:
-        List of Persona objects
+        List of Persona objects with IDs A01, A02, ... A{n}
     """
-    rng = random.Random(seed)
-    agents = [generate_general_agent(f"A{i+1:02d}", rng) for i in range(n)]
-    logger.info(f"Generated {n} general agents with seed={seed}")
+    agents = []
+
+    for i in range(n):
+        agent_id = f"A{i+1:02d}"
+
+        # Sample demographics
+        age_group = _sample_categorical(DISTRIBUTIONS["age_group"])
+
+        demographics = Demographics(
+            age_group=age_group,
+            gender=_sample_categorical(DISTRIBUTIONS["gender"]),
+            residence_years=_sample_residence_years(age_group),
+            ownership=_sample_categorical(DISTRIBUTIONS["ownership"]),
+            occupation=random.choice(OCCUPATIONS[age_group]),
+        )
+
+        # Sample economic
+        economic = Economic(
+            income_level=_sample_categorical(DISTRIBUTIONS["income_level"]),
+        )
+
+        # Sample context
+        context = Context(
+            information_access=_sample_categorical(DISTRIBUTIONS["information_access"]),
+            community_engagement=_sample_categorical(DISTRIBUTIONS["community_engagement"]),
+        )
+
+        # Classification (not vulnerable)
+        classification = Classification(
+            is_vulnerable=False,
+            vulnerable_type=None,
+            agent_id=agent_id,
+        )
+
+        agents.append(Persona(
+            demographics=demographics,
+            economic=economic,
+            context=context,
+            classification=classification,
+        ))
+
+    logger.info(f"Generated {n} general agents")
     return agents
 
 
@@ -222,168 +163,120 @@ def generate_general_agents(n: int, seed: int) -> List[Persona]:
 # Vulnerable Agent Loading
 # =============================================================================
 
-def _parse_list_section(content: str, required_fields: List[str]) -> Dict[str, str]:
+def load_vulnerable_agents(folder: str = "prompts/vulnerable") -> List[Persona]:
     """
-    Parses a markdown list section into a dictionary.
+    Loads all vulnerable agent profiles from markdown files in the specified folder.
+    Parses each .md file and converts it to a Persona object.
 
     Args:
-        content: Section content with "- key: value" lines
-        required_fields: List of field names that must be present
+        folder: Directory containing vulnerable agent markdown files
 
     Returns:
-        Dictionary of parsed key-value pairs
+        List of Persona objects (sorted by filename)
 
     Raises:
-        PersonaError: If any required field is missing
+        FileNotFoundError: If folder does not exist
+        ValueError: If markdown format is invalid
     """
-    result = {}
-    for line in content.strip().split("\n"):
-        line = line.strip()
-        if line.startswith("- ") and ":" in line:
-            key, value = line[2:].split(":", 1)
-            result[key.strip()] = value.strip()
+    folder_path = Path(folder)
 
-    for field in required_fields:
-        if field not in result:
-            raise PersonaError("error")
+    if not folder_path.exists():
+        raise FileNotFoundError(f"Vulnerable agents folder not found: {folder}")
 
-    return result
-
-
-def parse_vulnerable_markdown(filepath: str) -> Persona:
-    """
-    Parses a vulnerable agent markdown file into a Persona object.
-
-    Args:
-        filepath: Path to markdown file
-
-    Returns:
-        Persona object with parsed attributes
-
-    Raises:
-        PersonaError: If file format is invalid or required fields are missing
-    """
-    try:
-        with open(filepath, "r", encoding="utf-8") as f:
-            content = f.read()
-    except Exception:
-        raise PersonaError("error")
-
-    # Parse YAML frontmatter
-    frontmatter_match = re.match(r"^---\n(.*?)\n---", content, re.DOTALL)
-    if not frontmatter_match:
-        raise PersonaError("error")
-
-    frontmatter_dict = {}
-    for line in frontmatter_match.group(1).strip().split("\n"):
-        if ":" in line:
-            key, value = line.split(":", 1)
-            frontmatter_dict[key.strip()] = value.strip()
-
-    if "agent_id" not in frontmatter_dict or "vulnerable_type" not in frontmatter_dict:
-        raise PersonaError("error")
-
-    # Parse sections
-    sections = {}
-    current_section = None
-    current_content = []
-    body = content[frontmatter_match.end():].strip()
-
-    for line in body.split("\n"):
-        if line.startswith("# "):
-            if current_section:
-                sections[current_section] = "\n".join(current_content)
-            current_section = line[2:].strip()
-            current_content = []
-        else:
-            current_content.append(line)
-
-    if current_section:
-        sections[current_section] = "\n".join(current_content)
-
-    # Parse each required section
-    parsed_sections = {}
-    for section_name, fields in SECTION_FIELDS.items():
-        if section_name not in sections:
-            raise PersonaError("error")
-        parsed_sections[section_name] = _parse_list_section(sections[section_name], fields)
-
-    demo = parsed_sections["Demographics"]
-    pers = parsed_sections["Personality"]
-    econ = parsed_sections["Economic"]
-    stat = parsed_sections["State"]
-    ctx = parsed_sections["Context"]
-
-    demographics = Demographics(
-        age_group=demo["age_group"],
-        gender=demo["gender"],
-        residence_years=int(demo["residence_years"]),
-        ownership=demo["ownership"],
-        occupation=demo["occupation"],
-    )
-
-    personality = Personality(
-        assertiveness=int(pers["assertiveness"]),
-        openness=int(pers["openness"]),
-        risk_tolerance=int(pers["risk_tolerance"]),
-        community_orientation=int(pers["community_orientation"]),
-    )
-
-    economic = Economic(
-        income_level=econ["income_level"],
-        can_afford_contribution=econ["can_afford_contribution"].lower() == "true",
-    )
-
-    state = State(
-        economic_pressure=stat["economic_pressure"],
-        participation_tendency=stat["participation_tendency"],
-    )
-
-    context = Context(
-        information_access=ctx["information_access"],
-        community_engagement=ctx["community_engagement"],
-    )
-
-    classification = Classification(
-        is_vulnerable=True,
-        vulnerable_type=frontmatter_dict["vulnerable_type"],
-        agent_id=frontmatter_dict["agent_id"],
-    )
-
-    background = sections.get("Background Story", "").strip()
-
-    logger.debug(f"Loaded vulnerable agent from {filepath}")
-
-    return Persona(
-        demographics=demographics,
-        personality=personality,
-        economic=economic,
-        state=state,
-        context=context,
-        classification=classification,
-        background_story=background if background else None,
-    )
-
-
-def load_all_vulnerable_agents(prompts_dir: str = "prompts") -> List[Persona]:
-    """
-    Loads all 4 vulnerable agent profiles from markdown files.
-
-    Args:
-        prompts_dir: Directory containing vulnerable agent markdown files
-
-    Returns:
-        List of 4 Persona objects
-
-    Raises:
-        PersonaError: If any file is missing or invalid
-    """
     agents = []
-    for i in range(1, 5):
-        filepath = os.path.join(prompts_dir, f"vulnerable_agent_{i}.md")
-        agents.append(parse_vulnerable_markdown(filepath))
+    md_files = sorted(folder_path.glob("*.md"))
 
-    logger.info(f"Loaded {len(agents)} vulnerable agents from {prompts_dir}")
+    if not md_files:
+        raise FileNotFoundError(f"No markdown files found in: {folder}")
+
+    for filepath in md_files:
+        content = filepath.read_text(encoding="utf-8")
+
+        # Parse YAML frontmatter (between --- and ---)
+        frontmatter_match = re.match(r"^---\n(.*?)\n---", content, re.DOTALL)
+        if not frontmatter_match:
+            raise ValueError(f"Missing YAML frontmatter in: {filepath.name}")
+
+        # Extract agent_id and vulnerable_type from frontmatter
+        frontmatter = {}
+        for line in frontmatter_match.group(1).strip().split("\n"):
+            if ":" in line:
+                key, value = line.split(":", 1)
+                frontmatter[key.strip()] = value.strip()
+
+        if "agent_id" not in frontmatter or "vulnerable_type" not in frontmatter:
+            raise ValueError(f"Missing agent_id or vulnerable_type in: {filepath.name}")
+
+        # Parse sections (# SectionName followed by - key: value lines)
+        body = content[frontmatter_match.end():].strip()
+        sections = {}
+        current_section = None
+        current_lines = []
+
+        for line in body.split("\n"):
+            if line.startswith("# "):
+                if current_section:
+                    sections[current_section] = "\n".join(current_lines)
+                current_section = line[2:].strip()
+                current_lines = []
+            else:
+                current_lines.append(line)
+
+        if current_section:
+            sections[current_section] = "\n".join(current_lines)
+
+        # Helper to parse "- key: value" lines into dict
+        def parse_list_section(section_content: str) -> Dict[str, str]:
+            result = {}
+            for line in section_content.strip().split("\n"):
+                line = line.strip()
+                if line.startswith("- ") and ":" in line:
+                    key, value = line[2:].split(":", 1)
+                    result[key.strip()] = value.strip()
+            return result
+
+        # Parse each section
+        demo = parse_list_section(sections.get("Demographics", ""))
+        econ = parse_list_section(sections.get("Economic", ""))
+        ctx = parse_list_section(sections.get("Context", ""))
+
+        # Build Persona object
+        demographics = Demographics(
+            age_group=demo.get("age_group", ""),
+            gender=demo.get("gender", ""),
+            residence_years=int(demo.get("residence_years", 0)),
+            ownership=demo.get("ownership", ""),
+            occupation=demo.get("occupation", ""),
+        )
+
+        economic = Economic(
+            income_level=econ.get("income_level", "middle"),
+        )
+
+        context = Context(
+            information_access=ctx.get("information_access", "medium"),
+            community_engagement=ctx.get("community_engagement", "moderate"),
+        )
+
+        classification = Classification(
+            is_vulnerable=True,
+            vulnerable_type=frontmatter["vulnerable_type"],
+            agent_id=frontmatter["agent_id"],
+        )
+
+        background = sections.get("Background Story", "").strip()
+
+        agents.append(Persona(
+            demographics=demographics,
+            economic=economic,
+            context=context,
+            classification=classification,
+            background_story=background if background else None,
+        ))
+
+        logger.debug(f"Loaded vulnerable agent from {filepath.name}")
+
+    logger.info(f"Loaded {len(agents)} vulnerable agents from {folder}")
     return agents
 
 
@@ -391,30 +284,35 @@ def load_all_vulnerable_agents(prompts_dir: str = "prompts") -> List[Persona]:
 # Agent Group Creation
 # =============================================================================
 
-def create_agent_group(seed: int, prompts_dir: str = "prompts") -> List[Persona]:
+def create_agent_group(
+    n_general: int = 16,
+    vulnerable_folder: str = "prompts/vulnerable"
+) -> List[Persona]:
     """
-    Creates a complete agent group of 20 agents.
-    Generates 16 general agents and loads 4 vulnerable agents.
-    Reassigns agent IDs to A01-A20 (vulnerable agents get A17-A20).
+    Creates a complete agent group for simulation.
+    Generates general agents and loads vulnerable agents from folder.
+    Reassigns IDs so all agents have sequential IDs (A01, A02, ... A20).
 
     Args:
-        seed: Random seed for general agent generation
-        prompts_dir: Directory containing vulnerable agent files
+        n_general: Number of general agents to generate (default: 16)
+        vulnerable_folder: Folder containing vulnerable agent markdown files
 
     Returns:
-        List of 20 Persona objects
+        List of Persona objects with sequential IDs
 
     Raises:
-        PersonaError: If any vulnerable agent file is missing or invalid
+        FileNotFoundError: If vulnerable agents folder is missing
     """
-    general_agents = generate_general_agents(16, seed)
-    vulnerable_agents = load_all_vulnerable_agents(prompts_dir)
+    general_agents = generate_general_agents(n_general)
+    vulnerable_agents = load_vulnerable_agents(vulnerable_folder)
 
-    # Reassign agent IDs for vulnerable agents (A17-A20)
-    for i, agent in enumerate(vulnerable_agents):
-        agent.classification.agent_id = f"A{17+i:02d}"
-
+    # Combine and shuffle to randomize position of vulnerable agents
     all_agents = general_agents + vulnerable_agents
+    random.shuffle(all_agents)
+
+    # Reassign sequential IDs after shuffling
+    for i, agent in enumerate(all_agents):
+        agent.classification.agent_id = f"A{i + 1:02d}"
     logger.info(f"Created agent group: {len(general_agents)} general + {len(vulnerable_agents)} vulnerable = {len(all_agents)} total")
 
     return all_agents
@@ -427,6 +325,7 @@ def create_agent_group(seed: int, prompts_dir: str = "prompts") -> List[Persona]
 def persona_to_prompt(persona: Persona) -> str:
     """
     Converts a Persona object to an English prompt string for LLM.
+    This prompt instructs the LLM to role-play as the specified resident.
 
     Args:
         persona: Persona object to convert
@@ -435,9 +334,7 @@ def persona_to_prompt(persona: Persona) -> str:
         English prompt string describing the persona
     """
     d = persona.demographics
-    p = persona.personality
     e = persona.economic
-    s = persona.state
     c = persona.context
 
     prompt = f"""You are a resident with the following characteristics:
@@ -449,19 +346,8 @@ def persona_to_prompt(persona: Persona) -> str:
 - Housing status: {d.ownership}
 - Occupation: {d.occupation}
 
-[Personality] (1-5 scale, higher = stronger)
-- Assertiveness: {p.assertiveness}
-- Openness: {p.openness}
-- Risk tolerance: {p.risk_tolerance}
-- Community orientation: {p.community_orientation}
-
 [Economic situation]
 - Income level: {e.income_level}
-- Can afford contribution: {"yes" if e.can_afford_contribution else "no"}
-
-[Current state]
-- Economic pressure: {s.economic_pressure}
-- Participation tendency: {s.participation_tendency}
 
 [Context]
 - Information access: {c.information_access}
@@ -487,74 +373,23 @@ Act consistently with these characteristics. Express this resident's perspective
 def load_prompt_file(filename: str, prompts_dir: str = "prompts") -> str:
     """
     Loads a prompt file from the prompts directory.
+    Use this for loading local_context.md, discussion_rules.md, etc.
 
     Args:
-        filename: Name of the file to load
+        filename: Name of the file to load (e.g., "local_context.md")
         prompts_dir: Directory containing prompt files
 
     Returns:
         File content as string
 
     Raises:
-        PersonaError: If file does not exist or cannot be read
+        FileNotFoundError: If file does not exist
     """
-    filepath = os.path.join(prompts_dir, filename)
+    filepath = Path(prompts_dir) / filename
 
-    try:
-        with open(filepath, "r", encoding="utf-8") as f:
-            content = f.read()
-        logger.debug(f"Loaded {filename} from {prompts_dir}")
-        return content
-    except Exception:
-        raise PersonaError("error")
+    if not filepath.exists():
+        raise FileNotFoundError(f"Prompt file not found: {filepath}")
 
-
-def load_local_context(prompts_dir: str = "prompts") -> str:
-    """
-    Loads the local context prompt from markdown file.
-
-    Args:
-        prompts_dir: Directory containing prompt files
-
-    Returns:
-        Local context prompt as string
-
-    Raises:
-        PersonaError: If file does not exist
-    """
-    return load_prompt_file("local_context.md", prompts_dir)
-
-
-def load_discussion_rules(prompts_dir: str = "prompts") -> str:
-    """
-    Loads the discussion rules prompt from markdown file.
-
-    Args:
-        prompts_dir: Directory containing prompt files
-
-    Returns:
-        Discussion rules prompt as string
-
-    Raises:
-        PersonaError: If file does not exist
-    """
-    return load_prompt_file("discussion_rules.md", prompts_dir)
-
-
-def load_all_prompts(prompts_dir: str = "prompts") -> Dict[str, str]:
-    """
-    Loads all prompt files from the prompts directory.
-
-    Args:
-        prompts_dir: Directory containing prompt files
-
-    Returns:
-        Dictionary with 'local_context' and 'discussion_rules' keys
-
-    Raises:
-        PersonaError: If any prompt file is missing
-    """
-    return {
-        "local_context": load_prompt_file("local_context.md", prompts_dir),
-        "discussion_rules": load_prompt_file("discussion_rules.md", prompts_dir),
-    }
+    content = filepath.read_text(encoding="utf-8")
+    logger.debug(f"Loaded {filename} from {prompts_dir}")
+    return content

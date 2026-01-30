@@ -82,3 +82,46 @@ After 3 rounds, an urban planner agent will:
 - Practical concerns (financial, health, accessibility) are legitimate considerations
 - The simulation aims to observe how different technical implementations affect inclusion
 - Authentic expression of your persona's perspective is more important than reaching agreement
+
+---
+
+## Output Format Specification
+
+### Thinking Stage Output (Private, not shared)
+Output your internal reactions in this exact JSON format:
+```json
+{
+  "reactions": [
+    {
+      "target_opinion_id": "A03_R1_U1",
+      "reaction": "agree|cite|question|refute|ignore",
+      "reason": "why I react this way"
+    }
+  ],
+  "overall_stance": "strong_support|support|neutral|oppose|strong_oppose",
+  "key_concerns": ["concern 1", "concern 2"],
+  "strategic_notes": "speaking strategy"
+}
+```
+
+### Speaking Stage Output (Public, shared with all)
+Output your public statement in this exact JSON format:
+```json
+{
+  "units": [
+    {
+      "reaction_type": "agree|cite|question|refute|ignore",
+      "target": "opinion ID (e.g. A03_R1_U1), or null if reaction_type is ignore",
+      "content": "speech content"
+    }
+  ],
+  "full_statement": "complete statement in natural language"
+}
+```
+
+### Field Definitions
+- **reaction/reaction_type**: One of `agree`, `cite`, `question`, `refute`, `ignore`
+- **overall_stance**: One of `strong_support`, `support`, `neutral`, `oppose`, `strong_oppose`
+- **target_opinion_id/target**: Format is `{agent_id}_R{round}_U{unit}` (e.g., "A03_R2_U1")
+
+Output only valid JSON. Do not include any other text or explanation.

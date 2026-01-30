@@ -49,7 +49,7 @@ def _get_client():
     return _client
 
 
-def call(model_id: str, memory: List[Dict[str, str]], question: str) -> str:
+def call(model_id: str, memory: List[Dict[str, str]], question: str, temperature: float = 0.7) -> str:
     """
     Calls LG AI EXAONE API via Friendli AI with the given parameters.
     Uses OpenAI-compatible endpoint.
@@ -58,6 +58,7 @@ def call(model_id: str, memory: List[Dict[str, str]], question: str) -> str:
         model_id: The EXAONE model identifier (from MODEL_NAME env var)
         memory: Conversation history in standard format
         question: Current question/prompt
+        temperature: Sampling temperature (0.0-1.0)
 
     Returns:
         Model response as plain text string
@@ -74,7 +75,8 @@ def call(model_id: str, memory: List[Dict[str, str]], question: str) -> str:
     # Call API
     response = client.chat.completions.create(
         model=model_id,
-        messages=messages
+        messages=messages,
+        temperature=temperature
     )
 
     return response.choices[0].message.content

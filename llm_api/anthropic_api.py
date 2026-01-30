@@ -41,7 +41,7 @@ def _get_client():
     return _client
 
 
-def call(model_id: str, memory: List[Dict[str, str]], question: str) -> str:
+def call(model_id: str, memory: List[Dict[str, str]], question: str, temperature: float = 0.7) -> str:
     """
     Calls Anthropic API with the given parameters.
 
@@ -49,6 +49,7 @@ def call(model_id: str, memory: List[Dict[str, str]], question: str) -> str:
         model_id: The Anthropic model identifier
         memory: Conversation history in standard format
         question: Current question/prompt
+        temperature: Sampling temperature (0.0-1.0)
 
     Returns:
         Model response as plain text string
@@ -66,7 +67,8 @@ def call(model_id: str, memory: List[Dict[str, str]], question: str) -> str:
     response = client.messages.create(
         model=model_id,
         max_tokens=4096,
-        messages=messages
+        messages=messages,
+        temperature=temperature
     )
 
     # Extract text from content blocks

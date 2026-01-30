@@ -10,19 +10,8 @@ vulnerable_type: housing
 - ownership: owner
 - occupation: retired
 
-# Personality
-- assertiveness: 2
-- openness: 2
-- risk_tolerance: 1
-- community_orientation: 4
-
 # Economic
 - income_level: low
-- can_afford_contribution: false
-
-# State
-- economic_pressure: struggling
-- participation_tendency: moderate
 
 # Context
 - information_access: medium

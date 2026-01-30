@@ -623,18 +623,41 @@ No prior opinions → skip reactions, only generate initial stance and new point
 |-------|-----------------|-------|
 | Lv.1 | All 20 agents → `gemini-3-flash` | Single session, shared context |
 | Lv.2 | All 20 agents → `gemini-3-flash` | Separate sessions |
-| Lv.3 | 4 agents each → 5 different models | Round-robin assignment |
-| Lv.4 | Same as Lv.3 + Moderator (`claude-haiku-4.5`) | Moderator does not vote |
+| Lv.3 | 4 agents each → 5 different models | Random assignment per set |
+| Lv.4 | Same as Lv.3 + Moderator (random) | Moderator does not vote |
 | Lv.2-S | All 20 agents → `exaone-4.0` | Supplementary experiment |
 
 **Lv.3/Lv.4 Model Distribution**:
-- Agents 1-4: `gemini-3-flash`
-- Agents 5-8: `gpt-5-mini`
-- Agents 9-12: `claude-haiku-4.5`
-- Agents 13-16: `kimi-k2`
-- Agents 17-20: `exaone-4.0`
+- Each set: Randomly assign 5 models to 20 agents (4 agents per model)
+- Vulnerable agents (A17-A20): Each assigned to a different random model to avoid model-specific bias
+- Moderator: Randomly selected from 5 models per set
+- Urban Planner: Randomly selected from 5 models per set
 
-**Note**: Vulnerable agents (4 total) are distributed across different models to avoid model-specific bias.
+**Implementation**:
+```python
+def assign_models_lv3(agents: List[Persona], seed: int) -> Dict[str, str]:
+    """Randomly assigns 5 models to 20 agents, ensuring vulnerable agents get different models."""
+    rng = random.Random(seed)
+    models = ["gemini-3-flash", "gpt-5-mini", "claude-haiku-4.5", "kimi-k2", "exaone-4.0"]
+
+    # Shuffle models for vulnerable agents (A17-A20)
+    vulnerable_models = rng.sample(models, 4)
+
+    # Assign remaining 16 agents
+    general_models = models * 4  # Each model appears 4 times
+    # Remove models already assigned to vulnerable
+    for vm in vulnerable_models:
+        general_models.remove(vm)
+    rng.shuffle(general_models)
+
+    assignments = {}
+    for i, agent in enumerate(agents[:16]):
+        assignments[agent.classification.agent_id] = general_models[i]
+    for i, agent in enumerate(agents[16:]):
+        assignments[agent.classification.agent_id] = vulnerable_models[i]
+
+    return assignments
+```
 
 ### 4.3 Moderator Agent (Level 4 Only)
 
@@ -693,17 +716,21 @@ Each agent: receive items → vote yes/no → provide brief reasoning → majori
 
 ### 6.2 Five-Level Reaction Spectrum
 
-Based on Park & Lee (2016).
+Based on Park & Lee (2016) and design specification.
 
-| Level | Type | Score | Description |
-|-------|------|-------|-------------|
-| 0 | Ignore | 0 | No mention |
-| 1 | Refute | 1 | Explicit disagreement |
-| 2 | Question | 2 | Request clarification |
-| 3 | Cite | 3 | Reference without judgment |
-| 4 | Agree | 4 | Explicit support |
+| Level | Type (EN) | Type (KR) | Score | Description |
+|-------|-----------|-----------|-------|-------------|
+| 0 | ignore | 무시 | 0 | No mention of the opinion |
+| 1 | refute | 반박 | 1 | Explicit disagreement |
+| 2 | question | 질문 | 2 | Request clarification or more info |
+| 3 | cite | 인용 | 3 | Reference without explicit judgment |
+| 4 | agree | 동의 | 4 | Explicit support or agreement |
 
-**Detection**: Map interaction_type to levels; no reference = Ignore
+**Valid purpose values in SpeakingUnit**: `agree`, `refute`, `question`, `cite`, `new_point`
+- `new_point`: Original point not responding to others (not part of reaction spectrum)
+- `ignore`: Not explicitly stated; detected by absence of reference to an agent
+
+**Detection**: Map SpeakingUnit.purpose to levels; agents not referenced = Ignore
 
 **Key Metrics**:
 - total_reaction_count = non-ignore reactions

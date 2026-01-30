@@ -94,6 +94,9 @@ MODEL_CONFIG = {
     },
 }
 
+# Default temperature from environment variable
+DEFAULT_TEMPERATURE = float(os.getenv("LLM_TEMPERATURE", "0.7"))
+
 
 # =============================================================================
 # Memory Format Converters
@@ -225,6 +228,8 @@ def call_llm(
     This function abstracts away provider-specific differences and provides
     a consistent interface for calling any supported LLM model.
 
+    Temperature is always read from LLM_TEMPERATURE in .env file.
+
     Args:
         model: Model key (e.g., "gemini-3-flash", "gpt-5-mini")
         memory: Conversation history as list of {"question": str, "answer": str}
@@ -247,6 +252,8 @@ def call_llm(
         ... )
         >>> print(response)
     """
+    # Temperature is always from environment variable
+    temperature = DEFAULT_TEMPERATURE
     # Validate model key
     if model not in MODEL_CONFIG:
         supported = ", ".join(MODEL_CONFIG.keys())
@@ -272,7 +279,7 @@ def call_llm(
     for attempt in range(max_retries):
         try:
             start_time = time.time()
-            response = call_fn(model_id, memory, question)
+            response = call_fn(model_id, memory, question, temperature)
             latency = time.time() - start_time
 
             # Log success
@@ -312,6 +319,7 @@ __all__ = [
     "get_disabled_models",
     "get_all_models",
     "MODEL_CONFIG",
+    "DEFAULT_TEMPERATURE",
     "logger",
     "is_model_enabled",
     "to_google_format",
