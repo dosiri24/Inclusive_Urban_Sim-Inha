@@ -59,9 +59,11 @@ def _persona_to_summary(persona: dict) -> str:
 
 def _persona_to_prompt(persona: dict) -> str:
     """Convert persona dict to prompt string for LLM."""
+    resident_id = persona["resident_id"]
     bigfive = persona["BigFive"]
 
     base = (
+        f"당신의 ID: {resident_id}\n"
         f"연령대: {persona['연령대']}\n"
         f"성별: {persona['성별']}\n"
         f"직업: {persona['직업']}\n"
@@ -192,7 +194,7 @@ class DebateSimulation:
         logger.info("=== Generating narrative backgrounds ===")
 
         narrative_task = (
-            "당신은 주안2동에 사는 주민입니다. 주어진 페르소나를 바탕으로 다음 질문에 자연스럽게 답하세요.\n"
+            "당신은 주안2 미추5구역에 사는 주민입니다. 주어진 페르소나를 바탕으로 다음 질문에 자연스럽게 답하세요.\n"
             "1. 이 동네에 어떻게 오게 되었나요?\n"
             "2. 재개발에 대해 어디서, 누구에게, 어떻게 들었나요?\n"
             "3. '비례율', '분담금', '조합', '감정평가' 같은 재개발 용어를 들어본 적 있나요? 어느 정도 이해하고 있나요?\n"
@@ -228,6 +230,7 @@ class DebateSimulation:
                 agent_id=resident_id,
                 think_type="narrative",
                 상대의견=None,
+                반응유형=None,
                 생각=narrative
             )
             narrative_turn += 1
@@ -240,8 +243,8 @@ class DebateSimulation:
 
         initial_task = (
             "토론이 시작되기 전입니다. 아직 다른 주민의 의견을 듣지 않은 상태에서, "
-            "당신의 페르소나와 상황을 바탕으로 주안2동 재개발에 대한 당신의 입장을 정하세요. "
-            f'{{"입장": "매우찬성/찬성/반대/매우반대", "생각": "..."}} JSON만 출력. 마크다운 금지.'
+            "당신의 페르소나와 상황을 바탕으로 미추5구역 촉진계획 세부안에 대한 당신의 입장과 조건,직 우려 등을 이야기해주세요. "
+            f'Mode4 형식으로 JSON만 출력. 마크다운 금지.'
         )
 
         def form_initial_opinion(resident_id):
@@ -271,6 +274,7 @@ class DebateSimulation:
                 agent_id=resident_id,
                 think_type="initial",
                 상대의견=opinion["입장"],  # Store stance in 상대의견 field
+                반응유형=None,
                 생각=opinion["생각"]
             )
             initial_turn += 1
@@ -321,13 +325,17 @@ class DebateSimulation:
 
                 # === 3. Other agents react (parallel) ===
                 other_ids = [aid for aid in resident_ids if aid != speaker_id]
-                think_task = (
-                    f"{speaker_id}의 발화(코드: {response_code}): "
-                    f"'{parsed['발화'][:100]}'\n"
-                    f'이 발화에 대한 생각을 {{"상대의견": "{response_code}", "생각": "..."}} JSON만 출력하세요.'
-                )
 
                 def do_think(other_id):
+                    think_task = (
+                        f"[주의] 당신은 {other_id}입니다. 대화기록에서 {other_id}의 발언은 당신 자신의 발언입니다.\n\n"
+                        f"{speaker_id}의 발화(코드: {response_code}): "
+                        f"'{parsed['발화'][:100]}'\n"
+                        f'상대방이 왜 그렇게 말했는지, 그리고 당신({other_id})은 어떻게 생각하는지 정리하세요. '
+                        f'{{"상대의견": "{response_code}", '
+                        f'"반응유형": "공감/비판/인용/질문/무시 중 택1", '
+                        f'"생각": "..."}} JSON만 출력하세요.'
+                    )
                     agent = self.agents[other_id]["agent"]
                     response = agent.respond(think_task)
                     return other_id, parse_think(response)
@@ -349,6 +357,7 @@ class DebateSimulation:
                         agent_id=other_id,
                         think_type="reaction",
                         상대의견=think_parsed["상대의견"],
+                        반응유형=think_parsed["반응유형"],
                         생각=think_parsed["생각"]
                     )
                     think_turn += 1
@@ -359,13 +368,13 @@ class DebateSimulation:
             # === 4. End of round reflection (parallel) ===
             logger.info(f"=== Round {round_num} reflection ===")
 
-            reflection_task = (
-                f"{round_num}라운드가 끝났습니다. "
-                f"지금까지 논의를 당신의 페르소나 관점에서 정리하세요. "
-                f'반드시 {{"생각": "..."}} JSON만 출력하세요. 상대의견 필드는 포함하지 마세요.'
-            )
-
             def do_reflect(resident_id):
+                reflection_task = (
+                    f"[주의] 당신은 {resident_id}입니다. 대화기록에서 {resident_id}의 발언은 당신 자신의 발언입니다.\n\n"
+                    f"{round_num}라운드가 끝났습니다. "
+                    f"지금까지 들은 의견 중 가장 기억에 남는 것과 그 이유를 당신({resident_id})의 관점에서 정리하세요. "
+                    f'반드시 {{"생각": "..."}} JSON만 출력하세요. 상대의견 필드는 포함하지 마세요.'
+                )
                 agent = self.agents[resident_id]["agent"]
                 response = agent.respond(reflection_task)
                 return resident_id, parse_think(response)
@@ -388,6 +397,7 @@ class DebateSimulation:
                     agent_id=resident_id,
                     think_type="reflection",
                     상대의견=None,
+                    반응유형=None,
                     생각=reflection_parsed["생각"]
                 )
                 reflect_turn += 1
@@ -400,8 +410,8 @@ class DebateSimulation:
 
         final_task = (
             "토론이 모두 끝났습니다. 다른 주민들의 의견을 모두 들은 지금, "
-            "주안2동 재개발에 대한 당신의 최종 입장은 어떻습니까? "
-            '{"입장": "매우찬성/찬성/반대/매우반대", "생각": "..."} JSON만 출력. 마크다운 금지.'
+            "미추5구역 촉진계획 세부안에 대한 당신의 최종 입장은 어떻습니까? "
+            'Mode4 형식으로 JSON만 출력. 마크다운 금지.'
         )
 
         def form_final_opinion(resident_id):
@@ -427,6 +437,7 @@ class DebateSimulation:
                 agent_id=resident_id,
                 think_type="final",
                 상대의견=opinion["입장"],
+                반응유형=None,
                 생각=opinion["생각"]
             )
             final_turn += 1

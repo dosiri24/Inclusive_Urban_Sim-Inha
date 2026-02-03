@@ -64,14 +64,15 @@ def parse_think(response: str) -> dict:
     Parse agent think response (JSON string).
 
     Expected format:
-        {"상대의견": "resident_01_r1_03_r", "생각": "..."}
+        {"상대의견": "resident_01_r1_03_r", "반응유형": "공감", "생각": "..."}
 
     Returns:
-        dict with keys: 상대의견, 생각
+        dict with keys: 상대의견, 반응유형, 생각
         On parse failure, returns default values with raw response
     """
     default = {
         "상대의견": None,
+        "반응유형": None,
         "생각": response
     }
 
@@ -81,6 +82,7 @@ def parse_think(response: str) -> dict:
 
         return {
             "상대의견": parsed.get("상대의견", None),
+            "반응유형": parsed.get("반응유형", None),
             "생각": parsed.get("생각", response)
         }
 

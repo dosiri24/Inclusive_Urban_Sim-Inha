@@ -49,7 +49,7 @@ class DebateLogger:
         ]
         self.think_columns = [
             "code", "set_id", "level", "round", "turn",
-            "resident_id", "think_type", "상대의견", "생각"
+            "resident_id", "think_type", "상대의견", "반응유형", "생각"
         ]
 
     def log_debate(
@@ -96,6 +96,7 @@ class DebateLogger:
         agent_id: str,
         think_type: str,
         상대의견: str,
+        반응유형: str,
         생각: str
     ) -> str:
         """
@@ -105,6 +106,7 @@ class DebateLogger:
             think_type: "reaction" (response to specific utterance) or
                        "reflection" (end-of-round summary)
             상대의견: Code of the response being reacted to (can be None for reflection)
+            반응유형: Reaction type (공감/비판/인용/질문/무시, can be None)
 
         Returns:
             Generated code for this think
@@ -120,6 +122,7 @@ class DebateLogger:
             "resident_id": agent_id,
             "think_type": think_type,
             "상대의견": 상대의견,
+            "반응유형": 반응유형,
             "생각": 생각
         })
 
