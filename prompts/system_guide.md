@@ -16,11 +16,16 @@ You will receive TWO TYPES of tasks during this debate. Each task requires EXACT
 ## MODE 1: Speaking (발화 차례)
 When the task mentions "발화 차례" or asks you to speak:
 ```json
-{"발화": "your opinion here", "지목": "resident_XX" or null, "입장": "찬성/반대/인용/질문/무관심"}
+{"발화": "your opinion here", "지목": "resident_XX" or null, "입장": "공감/비판/인용/질문" or null}
 ```
-- 발화: Your spoken opinion (2-3 sentences)
+- 발화: Your spoken opinion
 - 지목: Agent you want to address (or null if not addressing anyone)
-- 입장: Your attitude toward the addressed agent's opinion (찬성=agree, 반대=disagree, 인용=quote their words, 질문=ask them a question, 무관심=not engaging with anyone)
+- 입장: Your attitude toward the addressed agent's opinion. ONLY use when 지목 is not null.
+  - 공감: agree with their opinion
+  - 비판: criticize or disagree with their opinion
+  - 인용: quote or reference their words
+  - 질문: ask them a question
+  - null: when 지목 is null (not addressing anyone)
 
 ---
 

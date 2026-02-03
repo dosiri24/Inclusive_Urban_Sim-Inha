@@ -188,7 +188,54 @@ class DebateSimulation:
         """
         resident_ids = [p["resident_id"] for p in self.personas]
 
-        # === 0. Pre-debate: Form initial opinions (parallel) ===
+        # === 0-1. Pre-debate: Generate narrative background (parallel) ===
+        logger.info("=== Generating narrative backgrounds ===")
+
+        narrative_task = (
+            "당신은 주안2동에 사는 주민입니다. 주어진 페르소나를 바탕으로 다음 질문에 자연스럽게 답하세요.\n"
+            "1. 이 동네에 어떻게 오게 되었나요?\n"
+            "2. 재개발에 대해 어디서, 누구에게, 어떻게 들었나요?\n"
+            "3. '비례율', '분담금', '조합', '감정평가' 같은 재개발 용어를 들어본 적 있나요? 어느 정도 이해하고 있나요?\n"
+            "4. 재개발이 되면 당신의 생활은 어떻게 바뀔 것 같나요?\n"
+            "5. 구체적으로 어떤 일을 하고, 대략적인 하루 일과가 어떻게 되나요?\n"
+            "6. 이 동네에서 자주 만나는 이웃이 있나요? 혹은 동네 모임이나 반상회에 참여하나요?\n"
+            "7. 여러 사람이 모여서 의견이 갈릴 때 당신은 보통 어떻게 행동하나요?\n"
+            "8. 재개발 외에 요즘 가장 신경 쓰이는 생활 문제가 있나요? (예: 자녀교육, 건강, 경제적 문제 등)\n\n"
+            "자연스러운 문장으로 답하세요. JSON이나 마크다운 형식 없이 일반 텍스트로만 작성하세요."
+        )
+
+        def generate_narrative(resident_id):
+            agent = self.agents[resident_id]["agent"]
+            response = agent.respond(narrative_task)
+            return resident_id, response
+
+        with ThreadPoolExecutor(max_workers=len(resident_ids)) as executor:
+            futures = {executor.submit(generate_narrative, aid): aid for aid in resident_ids}
+            narratives = {}
+            for future in as_completed(futures):
+                resident_id, response = future.result()
+                narratives[resident_id] = response
+
+        # Store narratives in memory (think slot)
+        narrative_turn = 1
+        for resident_id in resident_ids:
+            narrative = narratives[resident_id]
+            self.agents[resident_id]["agent"].memory.add_think(f"[서사 배경]\n{narrative}")
+
+            self.logger.log_think(
+                round=0,
+                turn=narrative_turn,
+                agent_id=resident_id,
+                think_type="narrative",
+                상대의견=None,
+                생각=narrative
+            )
+            narrative_turn += 1
+            logger.info(f"{resident_id} narrative generated")
+
+        self.logger.save()
+
+        # === 0-2. Pre-debate: Form initial opinions (parallel) ===
         logger.info("=== Forming initial opinions ===")
 
         initial_task = (

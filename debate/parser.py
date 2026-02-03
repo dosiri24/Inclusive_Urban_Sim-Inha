@@ -37,17 +37,21 @@ def parse_response(response: str) -> dict:
     default = {
         "발화": response,
         "지목": None,
-        "입장": "무관심"
+        "입장": None
     }
 
     try:
         cleaned = _strip_markdown(response)
         parsed = json.loads(cleaned)
 
+        지목 = parsed.get("지목", None)
+        # 입장 is only valid when 지목 is specified
+        입장 = parsed.get("입장", None) if 지목 else None
+
         return {
             "발화": parsed.get("발화", response),
-            "지목": parsed.get("지목", None),
-            "입장": parsed.get("입장", "무관심")
+            "지목": 지목,
+            "입장": 입장
         }
 
     except json.JSONDecodeError as e:

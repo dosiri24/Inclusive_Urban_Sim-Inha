@@ -5,4 +5,5 @@ __pycache__/
 venv/
 연구계획서.pdf
 test_*.py
-outputs/test/
+outputs/
+datas/
