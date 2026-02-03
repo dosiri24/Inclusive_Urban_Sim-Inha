@@ -3,9 +3,9 @@ Debate Logger
 
 Save debate results to CSV files with unique codes for each output.
 
-Code format: {agent_id}_r{round}_{turn:02d}_{type}
+Code format: {resident_id}_r{round}_{turn:02d}_{type}
 - type: 'r' for response, 't' for think
-- Example: agent_01_r1_03_r (agent_01's 3rd response in round 1)
+- Example: resident_01_r1_03_r (resident_01's 3rd response in round 1)
 """
 
 import csv
@@ -17,13 +17,13 @@ def generate_code(agent_id: str, round: int, turn: int, output_type: str) -> str
     Generate unique code for LLM output.
 
     Args:
-        agent_id: "agent_01" ~ "agent_20"
+        agent_id: "resident_01" ~ "resident_20"
         round: Round number (1, 2, 3)
         turn: Turn number within the round
         output_type: "r" for response, "t" for think
 
     Returns:
-        Code string like "agent_01_r1_03_r"
+        Code string like "resident_01_r1_03_r"
     """
     return f"{agent_id}_r{round}_{turn:02d}_{output_type}"
 
@@ -44,12 +44,12 @@ class DebateLogger:
         # CSV column headers
         self.debate_columns = [
             "code", "set_id", "level", "round", "turn",
-            "agent_id", "model", "is_vulnerable", "persona_summary",
+            "resident_id", "model", "is_vulnerable", "persona_summary",
             "발화", "지목", "입장"
         ]
         self.think_columns = [
             "code", "set_id", "level", "round", "turn",
-            "agent_id", "think_type", "상대의견", "생각"
+            "resident_id", "think_type", "상대의견", "생각"
         ]
 
     def log_debate(
@@ -78,7 +78,7 @@ class DebateLogger:
             "level": self.level,
             "round": round,
             "turn": turn,
-            "agent_id": agent_id,
+            "resident_id": agent_id,
             "model": model,
             "is_vulnerable": is_vulnerable,
             "persona_summary": persona_summary,
@@ -117,7 +117,7 @@ class DebateLogger:
             "level": self.level,
             "round": round,
             "turn": turn,
-            "agent_id": agent_id,
+            "resident_id": agent_id,
             "think_type": think_type,
             "상대의견": 상대의견,
             "생각": 생각

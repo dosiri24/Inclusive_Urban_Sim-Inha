@@ -28,7 +28,7 @@ def parse_response(response: str) -> dict:
     Parse agent debate response (JSON string).
 
     Expected format:
-        {"발화": "...", "지목": "agent_05" or null, "입장": "찬성"}
+        {"발화": "...", "지목": "resident_05" or null, "입장": "찬성"}
 
     Returns:
         dict with keys: 발화, 지목, 입장
@@ -60,7 +60,7 @@ def parse_think(response: str) -> dict:
     Parse agent think response (JSON string).
 
     Expected format:
-        {"상대의견": "agent_01_r1_03_r", "생각": "..."}
+        {"상대의견": "resident_01_r1_03_r", "생각": "..."}
 
     Returns:
         dict with keys: 상대의견, 생각

@@ -10,9 +10,9 @@ memory = Memory(
     persona="62 year old male, homeowner."
 )
 
-agent = Agent("agent_01", "gemini", memory)
+agent = Agent("resident_01", "gemini", memory)
 
-memory.add_conversation("agent_02", "I oppose redevelopment.")
+memory.add_conversation("resident_02", "I oppose redevelopment.")
 
-response = agent.respond("What do you think about agent_02's opinion?")
+response = agent.respond("What do you think about resident_02's opinion?")
 print(response)

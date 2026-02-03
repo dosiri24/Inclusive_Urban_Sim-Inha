@@ -22,12 +22,17 @@ def _generate_bigfive() -> dict:
     return {trait: random.randint(1, 5) for trait in BIGFIVE_TRAITS}
 
 
+def _generate_knowledge_level() -> str:
+    """Randomly select redevelopment knowledge level based on PERSONA_CONFIG."""
+    return _weighted_choice(PERSONA_CONFIG["재개발지식"])
+
+
 def generate_persona() -> dict:
     """
     Generate one random persona based on PERSONA_CONFIG distribution.
 
     Returns:
-        dict with keys: 연령대, 성별, 직업, 주거유형, 자가여부, 소득수준, 거주기간, 가구구성, BigFive
+        dict with keys: 연령대, 성별, 직업, 주거유형, 자가여부, 소득수준, 거주기간, 가구구성, 재개발지식, 매수동기, BigFive
     """
     persona = {}
 
@@ -37,8 +42,17 @@ def generate_persona() -> dict:
             period_options = {k: v["비율"] for k, v in options.items()}
             selected_period = _weighted_choice(period_options)
             persona[key] = options[selected_period]["평균"]
+        elif key == "매수동기":
+            # Skip here, will be set after 자가여부 is determined
+            continue
         else:
             persona[key] = _weighted_choice(options)
+
+    # Set 매수동기 based on 자가여부
+    if persona["자가여부"] == "자가":
+        persona["매수동기"] = _weighted_choice(PERSONA_CONFIG["매수동기"])
+    else:
+        persona["매수동기"] = "N/A"
 
     persona["BigFive"] = _generate_bigfive()
 
@@ -72,7 +86,7 @@ def generate_vulnerable_persona(json_path: str) -> dict:
     """
     Generate vulnerable persona by combining random fields + JSON file fields.
 
-    Random: 연령대, 성별, BigFive
+    Random: 연령대, 성별, 재개발지식, 매수동기(자가인 경우), BigFive
     From JSON: 직업, 주거유형, 자가여부, 소득수준, 거주기간, 가구구성
 
     Args:
@@ -81,16 +95,24 @@ def generate_vulnerable_persona(json_path: str) -> dict:
     Returns:
         dict with same structure as generate_persona()
     """
+    # Merge fields from JSON file first to check 자가여부
+    json_fields = _load_vulnerable_json(json_path)
+
     # Random fields
     persona = {
         "연령대": _weighted_choice(PERSONA_CONFIG["연령대"]),
         "성별": _weighted_choice(PERSONA_CONFIG["성별"]),
+        "재개발지식": _generate_knowledge_level(),
         "BigFive": _generate_bigfive()
     }
 
-    # Merge fields from JSON file
-    json_fields = _load_vulnerable_json(json_path)
     persona.update(json_fields)
+
+    # Set 매수동기 based on 자가여부
+    if persona.get("자가여부") == "자가":
+        persona["매수동기"] = _weighted_choice(PERSONA_CONFIG["매수동기"])
+    else:
+        persona["매수동기"] = "N/A"
 
     return persona
 
@@ -111,7 +133,7 @@ def generate_all_personas(
 
     Returns:
         List of persona dicts, each with:
-            - agent_id: "agent_01" ~ "agent_20"
+            - resident_id: "resident_01" ~ "resident_20"
             - is_vulnerable: bool
             - (all persona fields)
     """
@@ -148,8 +170,8 @@ def generate_all_personas(
     all_personas = normal_personas + vulnerable_personas
     random.shuffle(all_personas)
 
-    # Assign agent_id after shuffle
+    # Assign resident_id after shuffle
     for i, persona in enumerate(all_personas):
-        persona["agent_id"] = f"agent_{i+1:02d}"
+        persona["resident_id"] = f"resident_{i+1:02d}"
 
     return all_personas

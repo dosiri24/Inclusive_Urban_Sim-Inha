@@ -67,9 +67,11 @@ def _persona_to_prompt(persona: dict) -> str:
         f"직업: {persona['직업']}\n"
         f"주거유형: {persona['주거유형']}\n"
         f"자가여부: {persona['자가여부']}\n"
+        f"매수동기: {persona['매수동기']}\n"
         f"소득수준: {persona['소득수준']}\n"
         f"거주기간: {persona['거주기간']}년\n"
         f"가구구성: {persona['가구구성']}\n"
+        f"재개발지식: {persona['재개발지식']}\n"
         f"성격(BigFive): 개방성={bigfive['개방성']}, 성실성={bigfive['성실성']}, "
         f"외향성={bigfive['외향성']}, 친화성={bigfive['친화성']}, 신경성={bigfive['신경성']}"
     )
@@ -132,21 +134,21 @@ class DebateSimulation:
         if self.fixed_model:
             # Use specified model for all agents (testing)
             self.agent_models = {
-                p["agent_id"]: self.fixed_model
+                p["resident_id"]: self.fixed_model
                 for p in self.personas
             }
         else:
             # Random assignment
             self.agent_models = {
-                p["agent_id"]: random.choice(available_models)
+                p["resident_id"]: random.choice(available_models)
                 for p in self.personas
             }
 
         # Create agents with Memory
         self.agents = {}
         for persona in self.personas:
-            agent_id = persona["agent_id"]
-            model_name = self.agent_models[agent_id]
+            resident_id = persona["resident_id"]
+            model_name = self.agent_models[resident_id]
 
             memory = Memory(
                 system_context=self.system_guide,
@@ -155,8 +157,8 @@ class DebateSimulation:
                 persona=_persona_to_prompt(persona)
             )
 
-            self.agents[agent_id] = {
-                "agent": Agent(agent_id, model_name, memory),
+            self.agents[resident_id] = {
+                "agent": Agent(resident_id, model_name, memory),
                 "persona": persona,
                 "model": model_name
             }
@@ -170,6 +172,9 @@ class DebateSimulation:
         logger.info(f"Simulation initialized: set={set_id}, level={level}, agents={n_agents}")
         logger.info(f"Log file: {self.log_path}")
 
+        # Save agent list (personas only)
+        self._save_agent_list()
+
     def run(self):
         """
         Run the debate simulation.
@@ -181,7 +186,7 @@ class DebateSimulation:
            c. After round ends, all agents reflect
         2. Save logs to CSV
         """
-        agent_ids = [p["agent_id"] for p in self.personas]
+        resident_ids = [p["resident_id"] for p in self.personas]
 
         # === 0. Pre-debate: Form initial opinions (parallel) ===
         logger.info("=== Forming initial opinions ===")
@@ -189,45 +194,45 @@ class DebateSimulation:
         initial_task = (
             "토론이 시작되기 전입니다. 아직 다른 주민의 의견을 듣지 않은 상태에서, "
             "당신의 페르소나와 상황을 바탕으로 주안2동 재개발에 대한 당신의 입장을 정하세요. "
-            f'{{"입장": "찬성" 또는 "반대", "생각": "..."}} JSON만 출력. 마크다운 금지.'
+            f'{{"입장": "매우찬성/찬성/반대/매우반대", "생각": "..."}} JSON만 출력. 마크다운 금지.'
         )
 
-        def form_initial_opinion(agent_id):
-            agent = self.agents[agent_id]["agent"]
+        def form_initial_opinion(resident_id):
+            agent = self.agents[resident_id]["agent"]
             response = agent.respond(initial_task)
-            return agent_id, parse_initial_opinion(response)
+            return resident_id, parse_initial_opinion(response)
 
-        with ThreadPoolExecutor(max_workers=len(agent_ids)) as executor:
-            futures = {executor.submit(form_initial_opinion, aid): aid for aid in agent_ids}
+        with ThreadPoolExecutor(max_workers=len(resident_ids)) as executor:
+            futures = {executor.submit(form_initial_opinion, aid): aid for aid in resident_ids}
             initial_opinions = {}
             for future in as_completed(futures):
-                agent_id, parsed = future.result()
-                initial_opinions[agent_id] = parsed
+                resident_id, parsed = future.result()
+                initial_opinions[resident_id] = parsed
 
         # Store initial opinions in memory and log to CSV
         initial_turn = 1
-        for agent_id in agent_ids:
-            opinion = initial_opinions[agent_id]
-            self.agents[agent_id]["initial_stance"] = opinion["입장"]
-            self.agents[agent_id]["agent"].memory.add_think(
+        for resident_id in resident_ids:
+            opinion = initial_opinions[resident_id]
+            self.agents[resident_id]["initial_stance"] = opinion["입장"]
+            self.agents[resident_id]["agent"].memory.add_think(
                 f"[사전 의견] 입장: {opinion['입장']}, 이유: {opinion['생각']}"
             )
             # Log to think.csv with think_type="initial"
             self.logger.log_think(
                 round=0,  # Round 0 = pre-debate
                 turn=initial_turn,
-                agent_id=agent_id,
+                agent_id=resident_id,
                 think_type="initial",
                 상대의견=opinion["입장"],  # Store stance in 상대의견 field
                 생각=opinion["생각"]
             )
             initial_turn += 1
-            logger.info(f"{agent_id} initial stance: {opinion['입장']}")
+            logger.info(f"{resident_id} initial stance: {opinion['입장']}")
 
         self.logger.save()
 
-        # Save agent list with initial opinions
-        self._save_agent_list(initial_opinions)
+        # Save agent list (with initial opinions)
+        self._save_agent_list(initial_opinions=initial_opinions)
 
         for round_num in range(1, self.n_rounds + 1):
             logger.info(f"=== Round {round_num} started ===")
@@ -235,7 +240,7 @@ class DebateSimulation:
             # Global think counter for unique codes within round
             think_turn = 1
 
-            for turn, speaker_id in enumerate(agent_ids, start=1):
+            for turn, speaker_id in enumerate(resident_ids, start=1):
                 # === 1. Speaker's turn ===
                 speaker_data = self.agents[speaker_id]
                 speaker_agent = speaker_data["agent"]
@@ -262,13 +267,13 @@ class DebateSimulation:
                 logger.debug(f"{speaker_id} spoke: {parsed['발화'][:50]}...")
 
                 # === 2. Update other agents' memory ===
-                for other_id in agent_ids:
+                for other_id in resident_ids:
                     if other_id != speaker_id:
                         other_agent = self.agents[other_id]["agent"]
                         other_agent.memory.add_conversation(speaker_id, parsed["발화"])
 
                 # === 3. Other agents react (parallel) ===
-                other_ids = [aid for aid in agent_ids if aid != speaker_id]
+                other_ids = [aid for aid in resident_ids if aid != speaker_id]
                 think_task = (
                     f"{speaker_id}의 발화(코드: {response_code}): "
                     f"'{parsed['발화'][:100]}'\n"
@@ -313,27 +318,27 @@ class DebateSimulation:
                 f'반드시 {{"생각": "..."}} JSON만 출력하세요. 상대의견 필드는 포함하지 마세요.'
             )
 
-            def do_reflect(agent_id):
-                agent = self.agents[agent_id]["agent"]
+            def do_reflect(resident_id):
+                agent = self.agents[resident_id]["agent"]
                 response = agent.respond(reflection_task)
-                return agent_id, parse_think(response)
+                return resident_id, parse_think(response)
 
-            with ThreadPoolExecutor(max_workers=len(agent_ids)) as executor:
-                futures = {executor.submit(do_reflect, aid): aid for aid in agent_ids}
+            with ThreadPoolExecutor(max_workers=len(resident_ids)) as executor:
+                futures = {executor.submit(do_reflect, aid): aid for aid in resident_ids}
                 results = {}
                 for future in as_completed(futures):
-                    agent_id, reflection_parsed = future.result()
-                    results[agent_id] = reflection_parsed
+                    resident_id, reflection_parsed = future.result()
+                    results[resident_id] = reflection_parsed
 
             # Process results in order
             reflect_turn = 1
-            for agent_id in agent_ids:
-                reflection_parsed = results[agent_id]
-                self.agents[agent_id]["agent"].memory.add_think(reflection_parsed["생각"])
+            for resident_id in resident_ids:
+                reflection_parsed = results[resident_id]
+                self.agents[resident_id]["agent"].memory.add_think(reflection_parsed["생각"])
                 self.logger.log_think(
                     round=round_num,
                     turn=think_turn + reflect_turn,
-                    agent_id=agent_id,
+                    agent_id=resident_id,
                     think_type="reflection",
                     상대의견=None,
                     생각=reflection_parsed["생각"]
@@ -343,45 +348,104 @@ class DebateSimulation:
             # Auto-save after reflections
             self.logger.save()
 
+        # === 5. Post-debate: Form final opinions (parallel) ===
+        logger.info("=== Forming final opinions ===")
+
+        final_task = (
+            "토론이 모두 끝났습니다. 다른 주민들의 의견을 모두 들은 지금, "
+            "주안2동 재개발에 대한 당신의 최종 입장은 어떻습니까? "
+            '{"입장": "매우찬성/찬성/반대/매우반대", "생각": "..."} JSON만 출력. 마크다운 금지.'
+        )
+
+        def form_final_opinion(resident_id):
+            agent = self.agents[resident_id]["agent"]
+            response = agent.respond(final_task)
+            return resident_id, parse_initial_opinion(response)
+
+        with ThreadPoolExecutor(max_workers=len(resident_ids)) as executor:
+            futures = {executor.submit(form_final_opinion, aid): aid for aid in resident_ids}
+            final_opinions = {}
+            for future in as_completed(futures):
+                resident_id, parsed = future.result()
+                final_opinions[resident_id] = parsed
+
+        # Log final opinions
+        final_turn = 1
+        for resident_id in resident_ids:
+            opinion = final_opinions[resident_id]
+            self.agents[resident_id]["final_stance"] = opinion["입장"]
+            self.logger.log_think(
+                round=self.n_rounds + 1,
+                turn=final_turn,
+                agent_id=resident_id,
+                think_type="final",
+                상대의견=opinion["입장"],
+                생각=opinion["생각"]
+            )
+            final_turn += 1
+            logger.info(f"{resident_id} final stance: {opinion['입장']}")
+
+        self.logger.save()
+
+        # Save agent list (with initial and final opinions)
+        self._save_agent_list(initial_opinions=initial_opinions, final_opinions=final_opinions)
+
         logger.info(f"Simulation completed. Logs saved.")
 
-    def _save_agent_list(self, initial_opinions: dict):
-        """Save agent list with personas and initial opinions to CSV."""
+    def _save_agent_list(
+        self,
+        initial_opinions: dict = None,
+        final_opinions: dict = None
+    ):
+        """Save agent list with personas and opinions to CSV (incremental)."""
         output_path = Path(self.output_dir)
         output_path.mkdir(parents=True, exist_ok=True)
 
         agent_list_path = output_path / f"set{self.set_id}_lv{self.level}_agents.csv"
 
         columns = [
-            "agent_id", "model", "is_vulnerable", "initial_stance",
-            "연령대", "성별", "직업", "주거유형", "자가여부",
-            "소득수준", "거주기간", "가구구성",
-            "개방성", "성실성", "외향성", "친화성", "신경성"
+            "resident_id", "model", "is_vulnerable",
+            "연령대", "성별", "직업", "주거유형", "자가여부", "매수동기",
+            "소득수준", "거주기간", "가구구성", "재개발지식",
+            "개방성", "성실성", "외향성", "친화성", "신경성",
+            "initial_stance", "final_stance"
         ]
 
         rows = []
         for persona in self.personas:
-            agent_id = persona["agent_id"]
+            resident_id = persona["resident_id"]
             bigfive = persona["BigFive"]
-            rows.append({
-                "agent_id": agent_id,
-                "model": self.agents[agent_id]["model"],
+
+            row = {
+                "resident_id": resident_id,
+                "model": self.agents[resident_id]["model"],
                 "is_vulnerable": persona["is_vulnerable"],
-                "initial_stance": initial_opinions[agent_id]["입장"],
                 "연령대": persona["연령대"],
                 "성별": persona["성별"],
                 "직업": persona["직업"],
                 "주거유형": persona["주거유형"],
                 "자가여부": persona["자가여부"],
+                "매수동기": persona["매수동기"],
                 "소득수준": persona["소득수준"],
                 "거주기간": persona["거주기간"],
                 "가구구성": persona["가구구성"],
+                "재개발지식": persona["재개발지식"],
                 "개방성": bigfive["개방성"],
                 "성실성": bigfive["성실성"],
                 "외향성": bigfive["외향성"],
                 "친화성": bigfive["친화성"],
-                "신경성": bigfive["신경성"]
-            })
+                "신경성": bigfive["신경성"],
+                "initial_stance": "",
+                "final_stance": ""
+            }
+
+            if initial_opinions and resident_id in initial_opinions:
+                row["initial_stance"] = initial_opinions[resident_id]["입장"]
+
+            if final_opinions and resident_id in final_opinions:
+                row["final_stance"] = final_opinions[resident_id]["입장"]
+
+            rows.append(row)
 
         with open(agent_list_path, "w", newline="", encoding="utf-8") as f:
             writer = csv.DictWriter(f, fieldnames=columns)
