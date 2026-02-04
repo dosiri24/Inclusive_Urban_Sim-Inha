@@ -10,15 +10,18 @@ class Agent:
 
     def __init__(self, agent_id: str, model_name: str, memory: Memory):
         self.agent_id = agent_id
+        self.model_name = model_name
         self.memory = memory
         self.llm = get_llm(model_name)
 
-    def respond(self, task: str) -> str:
+    def respond(self, task: str) -> tuple[str, dict]:
         """
-        Process task and return LLM response.
-        No parsing - returns raw response string.
+        Process task and return LLM response with usage.
+
+        Returns:
+            (response_text, usage_dict)
         """
         self.memory.set_task(task)
         prompt_data = build_prompt(self.memory)
-        response = self.llm.chat_with_retry(prompt_data, agent_id=self.agent_id)
-        return response
+        response, usage = self.llm.chat_with_retry(prompt_data)
+        return response, usage

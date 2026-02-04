@@ -1,12 +1,14 @@
 """Anthropic Claude LLM"""
 
 import os
-from .base import BaseLLM, logger, is_enabled
+from .base import BaseLLM, is_enabled
 
 MODEL_NAME = "claude-haiku-4-5-20251001"
 
 
 class ClaudeLLM(BaseLLM):
+
+    model_name = MODEL_NAME
 
     def __init__(self):
         if not is_enabled("anthropic"):
@@ -18,12 +20,8 @@ class ClaudeLLM(BaseLLM):
 
         from anthropic import Anthropic
         self.client = Anthropic(api_key=api_key)
-        logger.debug("Anthropic client initialized")
 
-    def chat(self, prompt_data: dict, agent_id: str = None) -> str:
-        """
-        prompt_data: {"system": str, "timeline": str, "task": str}
-        """
+    def chat(self, prompt_data: dict) -> tuple[str, dict]:
         response = self.client.messages.create(
             model=MODEL_NAME,
             max_tokens=4096,
@@ -51,6 +49,11 @@ class ClaudeLLM(BaseLLM):
                 }
             ]
         )
+
         u = response.usage
-        logger.info(f"[{agent_id}] created={u.cache_creation_input_tokens}, read={u.cache_read_input_tokens}, input={u.input_tokens}")
-        return response.content[0].text
+        usage = {
+            "cached": u.cache_read_input_tokens,
+            "prompt": u.input_tokens,
+            "completion": u.output_tokens
+        }
+        return response.content[0].text, usage

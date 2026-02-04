@@ -14,5 +14,6 @@ agent = Agent("resident_01", "gemini", memory)
 
 memory.add_utterance("resident_02", "I oppose redevelopment.")
 
-response = agent.respond("What do you think about resident_02's opinion?")
+response, usage = agent.respond("What do you think about resident_02's opinion?")
 print(response)
+print(f"Usage: {usage}")

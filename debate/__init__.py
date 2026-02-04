@@ -15,5 +15,4 @@ from .config import (
 )
 from .persona import generate_persona, generate_all_personas
 from .parser import parse_response, parse_think
-from .logger import DebateLogger, generate_code
 from .simulation import DebateSimulation

@@ -1,12 +1,14 @@
 """LG EXAONE LLM (OpenAI compatible via Friendli)"""
 
 import os
-from .base import BaseLLM, logger, is_enabled
+from .base import BaseLLM, is_enabled
 
 MODEL_NAME = os.getenv("MODEL_NAME", "LGAI-EXAONE/K-EXAONE-236B-A23B")
 
 
 class ExaoneLLM(BaseLLM):
+
+    model_name = MODEL_NAME
 
     def __init__(self):
         if not is_enabled("exaone"):
@@ -21,12 +23,8 @@ class ExaoneLLM(BaseLLM):
 
         from openai import OpenAI
         self.client = OpenAI(api_key=api_key, base_url=base_url)
-        logger.debug("EXAONE client initialized")
 
-    def chat(self, prompt_data: dict, agent_id: str = None) -> str:
-        """
-        prompt_data: {"system": str, "timeline": str, "task": str}
-        """
+    def chat(self, prompt_data: dict) -> tuple[str, dict]:
         messages = [
             {"role": "system", "content": prompt_data["system"]},
             {"role": "user", "content": prompt_data["timeline"] + "\n\n" + prompt_data["task"]}
@@ -36,7 +34,11 @@ class ExaoneLLM(BaseLLM):
             model=MODEL_NAME,
             messages=messages
         )
+
         u = response.usage
-        cached = getattr(u.prompt_tokens_details, 'cached_tokens', 0) if u.prompt_tokens_details else 0
-        logger.info(f"[{agent_id}] cached={cached}, prompt={u.prompt_tokens}, completion={u.completion_tokens}")
-        return response.choices[0].message.content
+        usage = {
+            "cached": getattr(u.prompt_tokens_details, 'cached_tokens', 0) if u.prompt_tokens_details else 0,
+            "prompt": u.prompt_tokens,
+            "completion": u.completion_tokens
+        }
+        return response.choices[0].message.content, usage

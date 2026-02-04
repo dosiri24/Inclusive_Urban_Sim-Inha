@@ -15,20 +15,27 @@ def is_enabled(provider: str) -> bool:
 class BaseLLM:
     """Base class for all LLM providers. Child class must override chat()."""
 
-    def chat(self, prompt_data: dict, agent_id: str = None) -> str:
-        """prompt_data: {"system": str, "timeline": str, "task": str}"""
+    model_name: str = "unknown"
+
+    def chat(self, prompt_data: dict) -> tuple[str, dict]:
+        """
+        Call LLM and return response with usage.
+
+        Returns:
+            (response_text, {"cached": int, "prompt": int, "completion": int})
+        """
         raise NotImplementedError("Child class must implement chat()")
 
-    def chat_with_retry(self, prompt_data: dict, agent_id: str = None, max_retries: int = 3) -> str:
+    def chat_with_retry(self, prompt_data: dict, max_retries: int = 3) -> tuple[str, dict]:
         """Call chat() with retry on failure or empty response."""
         for attempt in range(max_retries):
             try:
-                result = self.chat(prompt_data, agent_id)
+                result, usage = self.chat(prompt_data)
                 if result is not None:
-                    return result
-                logger.warning(f"[{agent_id}] Empty response, retry {attempt+1}/{max_retries}")
+                    return result, usage
+                logger.warning(f"Empty response, retry {attempt+1}/{max_retries}")
             except Exception as e:
-                logger.warning(f"[{agent_id}] API error: {e}, retry {attempt+1}/{max_retries}")
+                logger.warning(f"API error: {e}, retry {attempt+1}/{max_retries}")
             if attempt < max_retries - 1:
                 time.sleep(2 ** attempt)
-        return None
+        return None, {}

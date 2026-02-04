@@ -9,40 +9,20 @@ import csv
 import random
 import logging
 from pathlib import Path
-from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from agent_api import Agent, Memory
 from llm_api import LLM_MAP, get_enabled_models
+from logger import setup_file_logger, DebateLogger, TokenLogger
 from .config import N_ROUNDS, N_AGENTS, N_VULNERABLE, PROMPTS_DIR, OUTPUT_DIR
 from .persona import generate_all_personas
 from .parser import parse_response, parse_think, parse_initial_opinion
-from .logger import DebateLogger
 from prompts.tasks import (
     get_narrative_task, get_initial_task, get_speaking_task,
     get_think_task, get_reflection_task, get_final_task
 )
 
 logger = logging.getLogger("debate.simulation")
-
-
-def setup_file_logger(output_dir: str, set_id: int, level: int):
-    """Setup file handler for all logs."""
-    log_dir = Path(output_dir)
-    log_dir.mkdir(parents=True, exist_ok=True)
-
-    log_path = log_dir / f"set{set_id}_lv{level}.log"
-
-    file_handler = logging.FileHandler(log_path, encoding="utf-8")
-    file_handler.setLevel(logging.DEBUG)
-    file_handler.setFormatter(logging.Formatter(
-        "%(asctime)s [%(levelname)s] %(name)s: %(message)s"
-    ))
-
-    root_logger = logging.getLogger()
-    root_logger.addHandler(file_handler)
-
-    return log_path
 
 
 def _load_prompt_file(path: str) -> str:
@@ -175,8 +155,9 @@ class DebateSimulation:
                 "model": model_name
             }
 
-        # Initialize logger
+        # Initialize loggers
         self.logger = DebateLogger(set_id, level, output_dir)
+        self.token_logger = TokenLogger(set_id, level, output_dir)
 
         # Setup file logger for all logs
         self.log_path = setup_file_logger(output_dir, set_id, level)
@@ -207,16 +188,18 @@ class DebateSimulation:
 
         def generate_narrative(resident_id):
             agent = self.agents[resident_id]["agent"]
-            response = agent.respond(narrative_task)
+            response, usage = agent.respond(narrative_task)
             parsed = parse_think(response)
-            return resident_id, parsed["생각"]
+            return resident_id, parsed["생각"], usage
 
         with ThreadPoolExecutor(max_workers=len(resident_ids)) as executor:
             futures = {executor.submit(generate_narrative, aid): aid for aid in resident_ids}
             narratives = {}
+            usages = {}
             for future in as_completed(futures):
-                resident_id, response = future.result()
+                resident_id, response, usage = future.result()
                 narratives[resident_id] = response
+                usages[resident_id] = usage
 
         # Store narratives in memory (think slot)
         narrative_turn = 1
@@ -233,10 +216,20 @@ class DebateSimulation:
                 반응유형=None,
                 생각=narrative
             )
+            self.token_logger.log(
+                agent_id=resident_id,
+                model=self.agents[resident_id]["model"],
+                task_type="narrative",
+                target=None,
+                round=0,
+                turn=narrative_turn,
+                usage=usages[resident_id]
+            )
             narrative_turn += 1
             logger.info(f"{resident_id} narrative generated")
 
         self.logger.save()
+        self.token_logger.save()
 
         # === 0-2. Pre-debate: Form initial opinions (parallel) ===
         logger.info("=== Forming initial opinions ===")
@@ -245,15 +238,17 @@ class DebateSimulation:
 
         def form_initial_opinion(resident_id):
             agent = self.agents[resident_id]["agent"]
-            response = agent.respond(initial_task)
-            return resident_id, parse_initial_opinion(response)
+            response, usage = agent.respond(initial_task)
+            return resident_id, parse_initial_opinion(response), usage
 
         with ThreadPoolExecutor(max_workers=len(resident_ids)) as executor:
             futures = {executor.submit(form_initial_opinion, aid): aid for aid in resident_ids}
             initial_opinions = {}
+            usages = {}
             for future in as_completed(futures):
-                resident_id, parsed = future.result()
+                resident_id, parsed, usage = future.result()
                 initial_opinions[resident_id] = parsed
+                usages[resident_id] = usage
 
         # Store initial opinions in memory and log to CSV
         initial_turn = 1
@@ -263,20 +258,29 @@ class DebateSimulation:
             self.agents[resident_id]["agent"].memory.add_my_think(
                 f"[사전 의견] 입장: {opinion['입장']}, 이유: {opinion['생각']}"
             )
-            # Log to think.csv with think_type="initial"
             self.logger.log_think(
-                round=0,  # Round 0 = pre-debate
+                round=0,
                 turn=initial_turn,
                 agent_id=resident_id,
                 think_type="initial",
-                상대의견=opinion["입장"],  # Store stance in 상대의견 field
+                상대의견=opinion["입장"],
                 반응유형=None,
                 생각=opinion["생각"]
+            )
+            self.token_logger.log(
+                agent_id=resident_id,
+                model=self.agents[resident_id]["model"],
+                task_type="initial",
+                target=None,
+                round=0,
+                turn=initial_turn,
+                usage=usages[resident_id]
             )
             initial_turn += 1
             logger.info(f"{resident_id} initial stance: {opinion['입장']}")
 
         self.logger.save()
+        self.token_logger.save()
 
         # Save agent list (with initial opinions)
         self._save_agent_list(initial_opinions=initial_opinions)
@@ -295,7 +299,7 @@ class DebateSimulation:
 
                 # Request speech
                 task = get_speaking_task(round_num)
-                response = speaker_agent.respond(task)
+                response, usage = speaker_agent.respond(task)
                 parsed = parse_response(response)
 
                 # Log debate
@@ -310,6 +314,15 @@ class DebateSimulation:
                     발화=parsed["발화"],
                     지목=parsed["지목"],
                     입장=parsed["입장"]
+                )
+                self.token_logger.log(
+                    agent_id=speaker_id,
+                    model=speaker_data["model"],
+                    task_type="speak",
+                    target=None,
+                    round=round_num,
+                    turn=turn,
+                    usage=usage
                 )
 
                 logger.debug(f"{speaker_id} spoke: {parsed['발화'][:50]}...")
@@ -326,15 +339,17 @@ class DebateSimulation:
                 def do_think(other_id):
                     think_task = get_think_task(other_id, speaker_id, response_code, parsed["발화"])
                     agent = self.agents[other_id]["agent"]
-                    response = agent.respond(think_task)
-                    return other_id, parse_think(response)
+                    response, usage = agent.respond(think_task)
+                    return other_id, parse_think(response), usage
 
                 with ThreadPoolExecutor(max_workers=len(other_ids)) as executor:
                     futures = {executor.submit(do_think, oid): oid for oid in other_ids}
                     results = {}
+                    usages = {}
                     for future in as_completed(futures):
-                        other_id, think_parsed = future.result()
+                        other_id, think_parsed, usage = future.result()
                         results[other_id] = think_parsed
+                        usages[other_id] = usage
 
                 # Process results in order
                 for other_id in other_ids:
@@ -349,10 +364,20 @@ class DebateSimulation:
                         반응유형=think_parsed["반응유형"],
                         생각=think_parsed["생각"]
                     )
+                    self.token_logger.log(
+                        agent_id=other_id,
+                        model=self.agents[other_id]["model"],
+                        task_type="think",
+                        target=speaker_id,
+                        round=round_num,
+                        turn=think_turn,
+                        usage=usages[other_id]
+                    )
                     think_turn += 1
 
                 # Auto-save after each speaker's turn
                 self.logger.save()
+                self.token_logger.save()
 
             # === 4. End of round reflection (parallel) ===
             logger.info(f"=== Round {round_num} reflection ===")
@@ -360,15 +385,17 @@ class DebateSimulation:
             def do_reflect(resident_id):
                 reflection_task = get_reflection_task(resident_id, round_num)
                 agent = self.agents[resident_id]["agent"]
-                response = agent.respond(reflection_task)
-                return resident_id, parse_think(response)
+                response, usage = agent.respond(reflection_task)
+                return resident_id, parse_think(response), usage
 
             with ThreadPoolExecutor(max_workers=len(resident_ids)) as executor:
                 futures = {executor.submit(do_reflect, aid): aid for aid in resident_ids}
                 results = {}
+                usages = {}
                 for future in as_completed(futures):
-                    resident_id, reflection_parsed = future.result()
+                    resident_id, reflection_parsed, usage = future.result()
                     results[resident_id] = reflection_parsed
+                    usages[resident_id] = usage
 
             # Process results in order
             reflect_turn = 1
@@ -384,10 +411,20 @@ class DebateSimulation:
                     반응유형=None,
                     생각=reflection_parsed["생각"]
                 )
+                self.token_logger.log(
+                    agent_id=resident_id,
+                    model=self.agents[resident_id]["model"],
+                    task_type="reflect",
+                    target=None,
+                    round=round_num,
+                    turn=think_turn + reflect_turn,
+                    usage=usages[resident_id]
+                )
                 reflect_turn += 1
 
             # Auto-save after reflections
             self.logger.save()
+            self.token_logger.save()
 
         # === 5. Post-debate: Form final opinions (parallel) ===
         logger.info("=== Forming final opinions ===")
@@ -396,15 +433,17 @@ class DebateSimulation:
 
         def form_final_opinion(resident_id):
             agent = self.agents[resident_id]["agent"]
-            response = agent.respond(final_task)
-            return resident_id, parse_initial_opinion(response)
+            response, usage = agent.respond(final_task)
+            return resident_id, parse_initial_opinion(response), usage
 
         with ThreadPoolExecutor(max_workers=len(resident_ids)) as executor:
             futures = {executor.submit(form_final_opinion, aid): aid for aid in resident_ids}
             final_opinions = {}
+            usages = {}
             for future in as_completed(futures):
-                resident_id, parsed = future.result()
+                resident_id, parsed, usage = future.result()
                 final_opinions[resident_id] = parsed
+                usages[resident_id] = usage
 
         # Log final opinions
         final_turn = 1
@@ -420,10 +459,20 @@ class DebateSimulation:
                 반응유형=None,
                 생각=opinion["생각"]
             )
+            self.token_logger.log(
+                agent_id=resident_id,
+                model=self.agents[resident_id]["model"],
+                task_type="final",
+                target=None,
+                round=self.n_rounds + 1,
+                turn=final_turn,
+                usage=usages[resident_id]
+            )
             final_turn += 1
             logger.info(f"{resident_id} final stance: {opinion['입장']}")
 
         self.logger.save()
+        self.token_logger.save()
 
         # Save agent list (with initial and final opinions)
         self._save_agent_list(initial_opinions=initial_opinions, final_opinions=final_opinions)

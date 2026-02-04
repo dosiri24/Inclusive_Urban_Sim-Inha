@@ -1,12 +1,14 @@
 """OpenAI ChatGPT LLM"""
 
 import os
-from .base import BaseLLM, logger, is_enabled
+from .base import BaseLLM, is_enabled
 
 MODEL_NAME = "gpt-5-mini"
 
 
 class ChatGPTLLM(BaseLLM):
+
+    model_name = MODEL_NAME
 
     def __init__(self):
         if not is_enabled("openai"):
@@ -18,12 +20,8 @@ class ChatGPTLLM(BaseLLM):
 
         from openai import OpenAI
         self.client = OpenAI(api_key=api_key)
-        logger.debug("OpenAI client initialized")
 
-    def chat(self, prompt_data: dict, agent_id: str = None) -> str:
-        """
-        prompt_data: {"system": str, "timeline": str, "task": str}
-        """
+    def chat(self, prompt_data: dict) -> tuple[str, dict]:
         messages = [
             {"role": "system", "content": prompt_data["system"]},
             {"role": "user", "content": prompt_data["timeline"] + "\n\n" + prompt_data["task"]}
@@ -33,7 +31,11 @@ class ChatGPTLLM(BaseLLM):
             model=MODEL_NAME,
             messages=messages
         )
+
         u = response.usage
-        cached = u.prompt_tokens_details.cached_tokens if u.prompt_tokens_details else 0
-        logger.info(f"[{agent_id}] cached={cached}, prompt={u.prompt_tokens}, completion={u.completion_tokens}")
-        return response.choices[0].message.content
+        usage = {
+            "cached": u.prompt_tokens_details.cached_tokens if u.prompt_tokens_details else 0,
+            "prompt": u.prompt_tokens,
+            "completion": u.completion_tokens
+        }
+        return response.choices[0].message.content, usage

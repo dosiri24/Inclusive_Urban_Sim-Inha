@@ -1,12 +1,14 @@
 """Google Gemini LLM"""
 
 import os
-from .base import BaseLLM, logger, is_enabled
+from .base import BaseLLM, is_enabled
 
 MODEL_NAME = "gemini-3-flash-preview"
 
 
 class GeminiLLM(BaseLLM):
+
+    model_name = MODEL_NAME
 
     def __init__(self):
         if not is_enabled("google"):
@@ -22,14 +24,9 @@ class GeminiLLM(BaseLLM):
         self.config = types.GenerateContentConfig(
             automatic_function_calling=types.AutomaticFunctionCallingConfig(disable=True)
         )
-        logger.debug("Gemini client initialized")
 
-    def chat(self, prompt_data: dict, agent_id: str = None) -> str:
-        """
-        prompt_data: {"system": str, "timeline": str, "task": str}
-        """
+    def chat(self, prompt_data: dict) -> tuple[str, dict]:
         user_content = prompt_data["system"] + "\n\n" + prompt_data["timeline"] + "\n\n" + prompt_data["task"]
-
         contents = [{"role": "user", "parts": [{"text": user_content}]}]
 
         response = self.client.models.generate_content(
@@ -37,7 +34,11 @@ class GeminiLLM(BaseLLM):
             contents=contents,
             config=self.config
         )
+
         u = response.usage_metadata
-        cached = getattr(u, 'cached_content_token_count', 0) or 0
-        logger.info(f"[{agent_id}] cached={cached}, prompt={u.prompt_token_count}, completion={u.candidates_token_count}")
-        return response.text
+        usage = {
+            "cached": getattr(u, 'cached_content_token_count', 0) or 0,
+            "prompt": u.prompt_token_count,
+            "completion": u.candidates_token_count
+        }
+        return response.text, usage
