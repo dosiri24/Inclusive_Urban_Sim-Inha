@@ -57,7 +57,7 @@ def _persona_to_summary(persona: dict) -> str:
     """Convert persona dict to short summary string for logging."""
     return (
         f"{persona['연령대']} {persona['성별']} {persona['직업']} "
-        f"{persona['자가여부']} {persona['거주기간']}년"
+        f"{persona['자가여부']} 거주{persona['거주기간']}"
     )
 
 
@@ -75,7 +75,7 @@ def _persona_to_prompt(persona: dict) -> str:
         f"자가여부: {persona['자가여부']}\n"
         f"매수동기: {persona['매수동기']}\n"
         f"연소득: {persona['소득수준']}\n"
-        f"거주기간: {persona['거주기간']}년\n"
+        f"거주기간: {persona['거주기간']}\n"
         f"가구구성: {persona['가구구성']}\n"
         f"재개발지식: {persona['재개발지식']}\n"
         f"성격(BigFive): 개방성={bigfive['개방성']}, 성실성={bigfive['성실성']}, "

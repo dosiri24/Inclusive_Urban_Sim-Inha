@@ -38,10 +38,9 @@ def generate_persona() -> dict:
 
     for key, options in PERSONA_CONFIG.items():
         if key == "거주기간":
-            # Special handling: select period, then use its average value
+            # Select period string directly for agent narrative flexibility
             period_options = {k: v["비율"] for k, v in options.items()}
-            selected_period = _weighted_choice(period_options)
-            persona[key] = options[selected_period]["평균"]
+            persona[key] = _weighted_choice(period_options)
         elif key == "매수동기":
             # Skip here, will be set after 자가여부 is determined
             continue
