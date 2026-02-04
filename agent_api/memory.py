@@ -4,7 +4,7 @@
 class Memory:
     """
     7-slot memory structure for agent.
-    1~4: static (string), 5~6: dynamic (list), 7: task (updated each call)
+    1~4: static (string), 5: dynamic timeline (list), 6: task (updated each call)
     """
 
     def __init__(
@@ -20,23 +20,26 @@ class Memory:
         self.local_context = local_context    # 3: local area info
         self.persona = persona                # 4: agent persona
 
-        # 5~6: dynamic slots
-        self.conversation_history = []        # 5: conversation log
-        self.think = []                       # 6: thoughts + reflections
+        # 5: unified timeline (utterance, my_utterance, my_think in chronological order)
+        self.timeline = []
 
-        # 7: task slot
-        self.task = ""                        # 7: current task instruction
+        # 6: task slot
+        self.task = ""
 
-    def add_conversation(self, speaker: str, content: str):
-        """Add to conversation history (slot 5)"""
-        self.conversation_history.append({"speaker": speaker, "content": content})
+    def add_utterance(self, speaker: str, content: str):
+        """Add other agent's utterance to timeline"""
+        self.timeline.append({"type": "utterance", "speaker": speaker, "content": content})
 
-    def add_think(self, content: str):
-        """Add thought or reflection (slot 6)"""
-        self.think.append(content)
+    def add_my_utterance(self, content: str):
+        """Add my own utterance to timeline"""
+        self.timeline.append({"type": "my_utterance", "content": content})
+
+    def add_my_think(self, content: str):
+        """Add my thought to timeline"""
+        self.timeline.append({"type": "my_think", "content": content})
 
     def set_task(self, task: str):
-        """Set current task (slot 7)"""
+        """Set current task (slot 6)"""
         self.task = task
 
     def get_all(self) -> dict:
@@ -46,7 +49,6 @@ class Memory:
             "debate_rule": self.debate_rule,
             "local_context": self.local_context,
             "persona": self.persona,
-            "conversation_history": self.conversation_history,
-            "think": self.think,
+            "timeline": self.timeline,
             "task": self.task,
         }

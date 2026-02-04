@@ -24,37 +24,20 @@ class GeminiLLM(BaseLLM):
         )
         logger.debug("Gemini client initialized")
 
-    def chat(self, messages: list) -> str:
-        contents = self._to_gemini_format(messages)
+    def chat(self, prompt_data: dict, agent_id: str = None) -> str:
+        """
+        prompt_data: {"system": str, "timeline": str, "task": str}
+        """
+        user_content = prompt_data["system"] + "\n\n" + prompt_data["timeline"] + "\n\n" + prompt_data["task"]
+
+        contents = [{"role": "user", "parts": [{"text": user_content}]}]
+
         response = self.client.models.generate_content(
             model=MODEL_NAME,
             contents=contents,
             config=self.config
         )
+        u = response.usage_metadata
+        cached = getattr(u, 'cached_content_token_count', 0) or 0
+        logger.info(f"[{agent_id}] cached={cached}, prompt={u.prompt_token_count}, completion={u.candidates_token_count}")
         return response.text
-
-    def _to_gemini_format(self, messages: list) -> list:
-        """Gemini uses role: user/model, parts: [{text}]"""
-        result = []
-        system_text = ""
-
-        # extract system message
-        for msg in messages:
-            if msg["role"] == "system":
-                system_text = msg["content"]
-                break
-
-        # convert messages
-        for msg in messages:
-            if msg["role"] == "system":
-                continue
-            role = "model" if msg["role"] == "assistant" else "user"
-            content = msg["content"]
-
-            # prepend system to first user message
-            if role == "user" and system_text and not result:
-                content = system_text + "\n\n" + content
-
-            result.append({"role": role, "parts": [{"text": content}]})
-
-        return result

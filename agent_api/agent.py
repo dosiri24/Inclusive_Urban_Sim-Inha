@@ -19,6 +19,6 @@ class Agent:
         No parsing - returns raw response string.
         """
         self.memory.set_task(task)
-        messages = build_prompt(self.memory)
-        response = self.llm.chat_with_retry(messages)
+        prompt_data = build_prompt(self.memory)
+        response = self.llm.chat_with_retry(prompt_data, agent_id=self.agent_id)
         return response

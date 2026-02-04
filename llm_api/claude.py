@@ -20,10 +20,37 @@ class ClaudeLLM(BaseLLM):
         self.client = Anthropic(api_key=api_key)
         logger.debug("Anthropic client initialized")
 
-    def chat(self, messages: list) -> str:
+    def chat(self, prompt_data: dict, agent_id: str = None) -> str:
+        """
+        prompt_data: {"system": str, "timeline": str, "task": str}
+        """
         response = self.client.messages.create(
             model=MODEL_NAME,
             max_tokens=4096,
-            messages=messages
+            system=[
+                {
+                    "type": "text",
+                    "text": prompt_data["system"],
+                    "cache_control": {"type": "ephemeral", "ttl": "5m"}
+                }
+            ],
+            messages=[
+                {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "text",
+                            "text": prompt_data["timeline"],
+                            "cache_control": {"type": "ephemeral", "ttl": "5m"}
+                        },
+                        {
+                            "type": "text",
+                            "text": prompt_data["task"]
+                        }
+                    ]
+                }
+            ]
         )
+        u = response.usage
+        logger.info(f"[{agent_id}] created={u.cache_creation_input_tokens}, read={u.cache_read_input_tokens}, input={u.input_tokens}")
         return response.content[0].text

@@ -12,7 +12,7 @@ memory = Memory(
 
 agent = Agent("resident_01", "gemini", memory)
 
-memory.add_conversation("resident_02", "I oppose redevelopment.")
+memory.add_utterance("resident_02", "I oppose redevelopment.")
 
 response = agent.respond("What do you think about resident_02's opinion?")
 print(response)

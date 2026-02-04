@@ -222,7 +222,7 @@ class DebateSimulation:
         narrative_turn = 1
         for resident_id in resident_ids:
             narrative = narratives[resident_id]
-            self.agents[resident_id]["agent"].memory.add_think(f"[서사 배경]\n{narrative}")
+            self.agents[resident_id]["agent"].memory.add_my_think(f"[서사 배경]\n{narrative}")
 
             self.logger.log_think(
                 round=0,
@@ -260,7 +260,7 @@ class DebateSimulation:
         for resident_id in resident_ids:
             opinion = initial_opinions[resident_id]
             self.agents[resident_id]["initial_stance"] = opinion["입장"]
-            self.agents[resident_id]["agent"].memory.add_think(
+            self.agents[resident_id]["agent"].memory.add_my_think(
                 f"[사전 의견] 입장: {opinion['입장']}, 이유: {opinion['생각']}"
             )
             # Log to think.csv with think_type="initial"
@@ -318,7 +318,7 @@ class DebateSimulation:
                 for other_id in resident_ids:
                     if other_id != speaker_id:
                         other_agent = self.agents[other_id]["agent"]
-                        other_agent.memory.add_conversation(speaker_id, parsed["발화"])
+                        other_agent.memory.add_utterance(speaker_id, parsed["발화"])
 
                 # === 3. Other agents react (parallel) ===
                 other_ids = [aid for aid in resident_ids if aid != speaker_id]
@@ -339,7 +339,7 @@ class DebateSimulation:
                 # Process results in order
                 for other_id in other_ids:
                     think_parsed = results[other_id]
-                    self.agents[other_id]["agent"].memory.add_think(think_parsed["생각"])
+                    self.agents[other_id]["agent"].memory.add_my_think(think_parsed["생각"])
                     self.logger.log_think(
                         round=round_num,
                         turn=think_turn,
@@ -374,7 +374,7 @@ class DebateSimulation:
             reflect_turn = 1
             for resident_id in resident_ids:
                 reflection_parsed = results[resident_id]
-                self.agents[resident_id]["agent"].memory.add_think(reflection_parsed["생각"])
+                self.agents[resident_id]["agent"].memory.add_my_think(reflection_parsed["생각"])
                 self.logger.log_think(
                     round=round_num,
                     turn=think_turn + reflect_turn,

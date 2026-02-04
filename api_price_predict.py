@@ -12,9 +12,10 @@ Lv.4. 개별 세션, 다중 모델, 무작위 모델 사회자 (향후 구현 �
 - Round 1~3: speaking(순차) → reaction(병렬) → reflection(병렬)
 - Round 4: final(병렬)
 
-캐시 적용:
-- 동일 에이전트의 연속 호출에서 이전 호출의 prefix (static + conv + think)가 캐시됨
-- 새로 계산: delta_conv + delta_think + task
+캐시 적용 (두 가지 시나리오):
+- Conservative (보수적): 병렬=0%, 순차(speaking)=100%
+- Optimistic (낙관적): 모든 후속 호출에서 이전 prefix 캐시
+- 실측 캐시 비율: ~56% (두 시나리오 사이)
 """
 
 import random
@@ -99,14 +100,14 @@ MODELS = {
 # Helper Functions
 # =============================================================================
 
-def calculate_individual_session_tokens_with_cache(n_agents: int = NUM_AGENTS, n_rounds: int = ROUNDS_PER_DEBATE):
+def calculate_individual_session_tokens_with_cache(n_agents: int = NUM_AGENTS, n_rounds: int = ROUNDS_PER_DEBATE, scenario: str = "conservative"):
     """
     Calculate total input/output tokens for one simulation with cache tracking.
 
-    Cache logic:
-    - First call per agent: no cache (all non_cached)
-    - Subsequent calls: previous (static + conv + think) is cached
-    - Non-cached: delta_conv + delta_think + task
+    Args:
+        scenario: "conservative" or "optimistic"
+            - conservative: parallel=0% cache, sequential(speaking)=100% cache
+            - optimistic: all subsequent calls use previous prefix cache
 
     Returns:
         (total_input, total_output, cached_input, non_cached_input)
@@ -116,21 +117,17 @@ def calculate_individual_session_tokens_with_cache(n_agents: int = NUM_AGENTS, n
     total_cached = 0
     total_non_cached = 0
 
-    # Track per-agent state
     agent_conv_history = {i: 0 for i in range(n_agents)}
     agent_think = {i: 0 for i in range(n_agents)}
-    agent_prev_prefix = {i: 0 for i in range(n_agents)}  # previous (static + conv + think)
+    agent_prev_prefix = {i: 0 for i in range(n_agents)}
 
-    # === Phase 0-1: Narrative (parallel) - First call, no cache ===
+    # === Phase 0-1: Narrative (parallel) - first call, no cache ===
     for agent_id in range(n_agents):
         input_tokens = TOKEN_STATIC + TOKEN_TASK_NARRATIVE
         total_input += input_tokens
         total_output += TOKEN_OUT_NARRATIVE
-
-        # First call: all non_cached
         total_non_cached += input_tokens
 
-        # Update state
         agent_think[agent_id] += TOKEN_OUT_NARRATIVE
         agent_prev_prefix[agent_id] = TOKEN_STATIC + agent_conv_history[agent_id] + agent_think[agent_id]
 
@@ -140,21 +137,21 @@ def calculate_individual_session_tokens_with_cache(n_agents: int = NUM_AGENTS, n
         total_input += input_tokens
         total_output += TOKEN_OUT_INITIAL
 
-        # Cache: previous prefix, Non-cached: delta + task
-        cached = agent_prev_prefix[agent_id]
-        delta_think = agent_think[agent_id] - (agent_prev_prefix[agent_id] - TOKEN_STATIC - agent_conv_history[agent_id])
-        non_cached = delta_think + TOKEN_TASK_INITIAL
-        total_cached += cached
-        total_non_cached += non_cached
+        if scenario == "optimistic":
+            cached = agent_prev_prefix[agent_id]
+            non_cached = input_tokens - cached
+            total_cached += cached
+            total_non_cached += non_cached
+        else:  # conservative: parallel = no cache
+            total_non_cached += input_tokens
 
-        # Update state
         agent_think[agent_id] += TOKEN_OUT_INITIAL
         agent_prev_prefix[agent_id] = TOKEN_STATIC + agent_conv_history[agent_id] + agent_think[agent_id]
 
     # === Phase 1~3: Debate rounds ===
     for _ in range(n_rounds):
         for speaker_id in range(n_agents):
-            # === Speaker's turn ===
+            # === Speaker's turn (sequential) - cache in both scenarios ===
             speaker_input = (TOKEN_STATIC +
                            agent_think[speaker_id] +
                            agent_conv_history[speaker_id] +
@@ -162,18 +159,14 @@ def calculate_individual_session_tokens_with_cache(n_agents: int = NUM_AGENTS, n
             total_input += speaker_input
             total_output += TOKEN_OUT_SPEAKING
 
-            # Cache calculation for speaker
             cached = agent_prev_prefix[speaker_id]
             current_prefix = TOKEN_STATIC + agent_conv_history[speaker_id] + agent_think[speaker_id]
             delta = current_prefix - cached
             non_cached = delta + TOKEN_TASK_SPEAKING
             total_cached += cached
             total_non_cached += non_cached
-
-            # Update speaker's prev_prefix (no state change for speaker, just task done)
             agent_prev_prefix[speaker_id] = current_prefix
 
-            # Update other agents' conversation_history
             for other_id in range(n_agents):
                 if other_id != speaker_id:
                     agent_conv_history[other_id] += TOKEN_OUT_SPEAKING
@@ -188,15 +181,16 @@ def calculate_individual_session_tokens_with_cache(n_agents: int = NUM_AGENTS, n
                     total_input += reactor_input
                     total_output += TOKEN_OUT_REACTION
 
-                    # Cache calculation for reactor
-                    cached = agent_prev_prefix[reactor_id]
-                    current_prefix = TOKEN_STATIC + agent_conv_history[reactor_id] + agent_think[reactor_id]
-                    delta = current_prefix - cached
-                    non_cached = delta + TOKEN_TASK_THINK
-                    total_cached += cached
-                    total_non_cached += non_cached
+                    if scenario == "optimistic":
+                        cached = agent_prev_prefix[reactor_id]
+                        current_prefix = TOKEN_STATIC + agent_conv_history[reactor_id] + agent_think[reactor_id]
+                        delta = current_prefix - cached
+                        non_cached = delta + TOKEN_TASK_THINK
+                        total_cached += cached
+                        total_non_cached += non_cached
+                    else:  # conservative: parallel = no cache
+                        total_non_cached += reactor_input
 
-                    # Update reactor state
                     agent_think[reactor_id] += TOKEN_OUT_REACTION
                     agent_prev_prefix[reactor_id] = TOKEN_STATIC + agent_conv_history[reactor_id] + agent_think[reactor_id]
 
@@ -209,15 +203,16 @@ def calculate_individual_session_tokens_with_cache(n_agents: int = NUM_AGENTS, n
             total_input += reflect_input
             total_output += TOKEN_OUT_REFLECTION
 
-            # Cache calculation
-            cached = agent_prev_prefix[agent_id]
-            current_prefix = TOKEN_STATIC + agent_conv_history[agent_id] + agent_think[agent_id]
-            delta = current_prefix - cached
-            non_cached = delta + TOKEN_TASK_REFLECTION
-            total_cached += cached
-            total_non_cached += non_cached
+            if scenario == "optimistic":
+                cached = agent_prev_prefix[agent_id]
+                current_prefix = TOKEN_STATIC + agent_conv_history[agent_id] + agent_think[agent_id]
+                delta = current_prefix - cached
+                non_cached = delta + TOKEN_TASK_REFLECTION
+                total_cached += cached
+                total_non_cached += non_cached
+            else:  # conservative: parallel = no cache
+                total_non_cached += reflect_input
 
-            # Update state
             agent_think[agent_id] += TOKEN_OUT_REFLECTION
             agent_prev_prefix[agent_id] = TOKEN_STATIC + agent_conv_history[agent_id] + agent_think[agent_id]
 
@@ -230,13 +225,15 @@ def calculate_individual_session_tokens_with_cache(n_agents: int = NUM_AGENTS, n
         total_input += final_input
         total_output += TOKEN_OUT_FINAL
 
-        # Cache calculation
-        cached = agent_prev_prefix[agent_id]
-        current_prefix = TOKEN_STATIC + agent_conv_history[agent_id] + agent_think[agent_id]
-        delta = current_prefix - cached
-        non_cached = delta + TOKEN_TASK_FINAL
-        total_cached += cached
-        total_non_cached += non_cached
+        if scenario == "optimistic":
+            cached = agent_prev_prefix[agent_id]
+            current_prefix = TOKEN_STATIC + agent_conv_history[agent_id] + agent_think[agent_id]
+            delta = current_prefix - cached
+            non_cached = delta + TOKEN_TASK_FINAL
+            total_cached += cached
+            total_non_cached += non_cached
+        else:  # conservative: parallel = no cache
+            total_non_cached += final_input
 
     return total_input, total_output, total_cached, total_non_cached
 
@@ -372,7 +369,7 @@ def lv1():
     }
 
 
-def lv2():
+def lv2(scenario: str = "conservative"):
     """Lv.2. 개별 세션, gemini 단일 모델"""
     model = MODELS["gemini-3-flash-preview"]
 
@@ -382,7 +379,7 @@ def lv2():
     total_non_cached = 0
 
     for _ in range(SAMPLES_PER_LV):
-        inp, out, cached, non_cached = calculate_individual_session_tokens_with_cache()
+        inp, out, cached, non_cached = calculate_individual_session_tokens_with_cache(scenario=scenario)
         total_input += inp
         total_output += out
         total_cached += cached
@@ -396,6 +393,7 @@ def lv2():
 
     return {
         "level": "Lv.2",
+        "scenario": scenario,
         "description": "개별 세션, 단일 모델",
         "model": model["name"],
         "total_input_tokens": total_input,
@@ -411,7 +409,7 @@ def lv2():
     }
 
 
-def lv3():
+def lv3(scenario: str = "conservative"):
     """Lv.3. 개별 세션, 다중 모델 (무작위 배정)"""
     model_list = list(MODELS.values())
 
@@ -427,7 +425,7 @@ def lv3():
         agent_think = {i: 0 for i in range(NUM_AGENTS)}
         agent_prev_prefix = {i: 0 for i in range(NUM_AGENTS)}
 
-        # Phase 0-1: Narrative (first call, no cache)
+        # Phase 0-1: Narrative (parallel) - first call, no cache
         for agent_id in range(NUM_AGENTS):
             model = assigned_models[agent_id]
             input_tokens = TOKEN_STATIC + TOKEN_TASK_NARRATIVE
@@ -438,19 +436,20 @@ def lv3():
             agent_think[agent_id] += TOKEN_OUT_NARRATIVE
             agent_prev_prefix[agent_id] = TOKEN_STATIC + agent_conv_history[agent_id] + agent_think[agent_id]
 
-        # Phase 0-2: Initial
+        # Phase 0-2: Initial (parallel)
         for agent_id in range(NUM_AGENTS):
             model = assigned_models[agent_id]
             input_tokens = TOKEN_STATIC + agent_think[agent_id] + TOKEN_TASK_INITIAL
             total_input_by_model[model["name"]] += input_tokens
             total_output_by_model[model["name"]] += TOKEN_OUT_INITIAL
 
-            cached = agent_prev_prefix[agent_id]
-            current_prefix = TOKEN_STATIC + agent_conv_history[agent_id] + agent_think[agent_id]
-            delta = current_prefix - cached
-            non_cached = delta + TOKEN_TASK_INITIAL
-            total_cached_by_model[model["name"]] += cached
-            total_non_cached_by_model[model["name"]] += non_cached
+            if scenario == "optimistic":
+                cached = agent_prev_prefix[agent_id]
+                non_cached = input_tokens - cached
+                total_cached_by_model[model["name"]] += cached
+                total_non_cached_by_model[model["name"]] += non_cached
+            else:
+                total_non_cached_by_model[model["name"]] += input_tokens
 
             agent_think[agent_id] += TOKEN_OUT_INITIAL
             agent_prev_prefix[agent_id] = TOKEN_STATIC + agent_conv_history[agent_id] + agent_think[agent_id]
@@ -458,6 +457,7 @@ def lv3():
         # Phase 1~3: Rounds
         for _ in range(ROUNDS_PER_DEBATE):
             for speaker_id in range(NUM_AGENTS):
+                # Speaking (sequential) - cache in both scenarios
                 model = assigned_models[speaker_id]
                 speaker_input = (TOKEN_STATIC + agent_think[speaker_id] +
                                agent_conv_history[speaker_id] + TOKEN_TASK_SPEAKING)
@@ -476,6 +476,7 @@ def lv3():
                     if other_id != speaker_id:
                         agent_conv_history[other_id] += TOKEN_OUT_SPEAKING
 
+                # Reaction (parallel)
                 for reactor_id in range(NUM_AGENTS):
                     if reactor_id != speaker_id:
                         model = assigned_models[reactor_id]
@@ -484,16 +485,20 @@ def lv3():
                         total_input_by_model[model["name"]] += reactor_input
                         total_output_by_model[model["name"]] += TOKEN_OUT_REACTION
 
-                        cached = agent_prev_prefix[reactor_id]
-                        current_prefix = TOKEN_STATIC + agent_conv_history[reactor_id] + agent_think[reactor_id]
-                        delta = current_prefix - cached
-                        non_cached = delta + TOKEN_TASK_THINK
-                        total_cached_by_model[model["name"]] += cached
-                        total_non_cached_by_model[model["name"]] += non_cached
+                        if scenario == "optimistic":
+                            cached = agent_prev_prefix[reactor_id]
+                            current_prefix = TOKEN_STATIC + agent_conv_history[reactor_id] + agent_think[reactor_id]
+                            delta = current_prefix - cached
+                            non_cached = delta + TOKEN_TASK_THINK
+                            total_cached_by_model[model["name"]] += cached
+                            total_non_cached_by_model[model["name"]] += non_cached
+                        else:
+                            total_non_cached_by_model[model["name"]] += reactor_input
 
                         agent_think[reactor_id] += TOKEN_OUT_REACTION
                         agent_prev_prefix[reactor_id] = TOKEN_STATIC + agent_conv_history[reactor_id] + agent_think[reactor_id]
 
+            # Reflection (parallel)
             for agent_id in range(NUM_AGENTS):
                 model = assigned_models[agent_id]
                 reflect_input = (TOKEN_STATIC + agent_think[agent_id] +
@@ -501,17 +506,20 @@ def lv3():
                 total_input_by_model[model["name"]] += reflect_input
                 total_output_by_model[model["name"]] += TOKEN_OUT_REFLECTION
 
-                cached = agent_prev_prefix[agent_id]
-                current_prefix = TOKEN_STATIC + agent_conv_history[agent_id] + agent_think[agent_id]
-                delta = current_prefix - cached
-                non_cached = delta + TOKEN_TASK_REFLECTION
-                total_cached_by_model[model["name"]] += cached
-                total_non_cached_by_model[model["name"]] += non_cached
+                if scenario == "optimistic":
+                    cached = agent_prev_prefix[agent_id]
+                    current_prefix = TOKEN_STATIC + agent_conv_history[agent_id] + agent_think[agent_id]
+                    delta = current_prefix - cached
+                    non_cached = delta + TOKEN_TASK_REFLECTION
+                    total_cached_by_model[model["name"]] += cached
+                    total_non_cached_by_model[model["name"]] += non_cached
+                else:
+                    total_non_cached_by_model[model["name"]] += reflect_input
 
                 agent_think[agent_id] += TOKEN_OUT_REFLECTION
                 agent_prev_prefix[agent_id] = TOKEN_STATIC + agent_conv_history[agent_id] + agent_think[agent_id]
 
-        # Phase 4: Final
+        # Phase 4: Final (parallel)
         for agent_id in range(NUM_AGENTS):
             model = assigned_models[agent_id]
             final_input = (TOKEN_STATIC + agent_think[agent_id] +
@@ -519,14 +527,16 @@ def lv3():
             total_input_by_model[model["name"]] += final_input
             total_output_by_model[model["name"]] += TOKEN_OUT_FINAL
 
-            cached = agent_prev_prefix[agent_id]
-            current_prefix = TOKEN_STATIC + agent_conv_history[agent_id] + agent_think[agent_id]
-            delta = current_prefix - cached
-            non_cached = delta + TOKEN_TASK_FINAL
-            total_cached_by_model[model["name"]] += cached
-            total_non_cached_by_model[model["name"]] += non_cached
+            if scenario == "optimistic":
+                cached = agent_prev_prefix[agent_id]
+                current_prefix = TOKEN_STATIC + agent_conv_history[agent_id] + agent_think[agent_id]
+                delta = current_prefix - cached
+                non_cached = delta + TOKEN_TASK_FINAL
+                total_cached_by_model[model["name"]] += cached
+                total_non_cached_by_model[model["name"]] += non_cached
+            else:
+                total_non_cached_by_model[model["name"]] += final_input
 
-    # Calculate costs
     cost_cached = sum((total_cached_by_model[m["name"]] / 1_000_000) * m["cached_input"] for m in model_list)
     cost_non_cached = sum((total_non_cached_by_model[m["name"]] / 1_000_000) * m["input"] for m in model_list)
     cost_input = cost_cached + cost_non_cached
@@ -535,6 +545,7 @@ def lv3():
 
     return {
         "level": "Lv.3",
+        "scenario": scenario,
         "description": "개별 세션, 다중 모델 (무작위)",
         "models": {m["name"]: {
             "input_tokens": total_input_by_model[m["name"]],
@@ -555,7 +566,7 @@ def lv3():
     }
 
 
-def lv4():
+def lv4(scenario: str = "conservative"):
     """Lv.4. 개별 세션, 다중 모델, 무작위 모델 사회자 (향후 구현 예정)"""
     model_list = list(MODELS.values())
 
@@ -574,7 +585,7 @@ def lv4():
         moderator_summary_accumulated = 0
         moderator_prev_prefix = 0
 
-        # Phase 0-1: Narrative
+        # Phase 0-1: Narrative (parallel) - first call, no cache
         for agent_id in range(NUM_AGENTS):
             model = assigned_models[agent_id]
             input_tokens = TOKEN_STATIC + TOKEN_TASK_NARRATIVE
@@ -585,19 +596,20 @@ def lv4():
             agent_think[agent_id] += TOKEN_OUT_NARRATIVE
             agent_prev_prefix[agent_id] = TOKEN_STATIC + agent_conv_history[agent_id] + agent_think[agent_id]
 
-        # Phase 0-2: Initial
+        # Phase 0-2: Initial (parallel)
         for agent_id in range(NUM_AGENTS):
             model = assigned_models[agent_id]
             input_tokens = TOKEN_STATIC + agent_think[agent_id] + TOKEN_TASK_INITIAL
             total_input_by_model[model["name"]] += input_tokens
             total_output_by_model[model["name"]] += TOKEN_OUT_INITIAL
 
-            cached = agent_prev_prefix[agent_id]
-            current_prefix = TOKEN_STATIC + agent_conv_history[agent_id] + agent_think[agent_id]
-            delta = current_prefix - cached
-            non_cached = delta + TOKEN_TASK_INITIAL
-            total_cached_by_model[model["name"]] += cached
-            total_non_cached_by_model[model["name"]] += non_cached
+            if scenario == "optimistic":
+                cached = agent_prev_prefix[agent_id]
+                non_cached = input_tokens - cached
+                total_cached_by_model[model["name"]] += cached
+                total_non_cached_by_model[model["name"]] += non_cached
+            else:
+                total_non_cached_by_model[model["name"]] += input_tokens
 
             agent_think[agent_id] += TOKEN_OUT_INITIAL
             agent_prev_prefix[agent_id] = TOKEN_STATIC + agent_conv_history[agent_id] + agent_think[agent_id]
@@ -607,6 +619,7 @@ def lv4():
             round_speeches_total = 0
 
             for speaker_id in range(NUM_AGENTS):
+                # Speaking (sequential) - cache in both scenarios
                 model = assigned_models[speaker_id]
                 speaker_input = (TOKEN_STATIC + agent_think[speaker_id] +
                                agent_conv_history[speaker_id] +
@@ -627,6 +640,7 @@ def lv4():
                     if other_id != speaker_id:
                         agent_conv_history[other_id] += TOKEN_OUT_SPEAKING
 
+                # Reaction (parallel)
                 for reactor_id in range(NUM_AGENTS):
                     if reactor_id != speaker_id:
                         model = assigned_models[reactor_id]
@@ -636,17 +650,20 @@ def lv4():
                         total_input_by_model[model["name"]] += reactor_input
                         total_output_by_model[model["name"]] += TOKEN_OUT_REACTION
 
-                        cached = agent_prev_prefix[reactor_id]
-                        current_prefix = TOKEN_STATIC + agent_conv_history[reactor_id] + agent_think[reactor_id] + moderator_summary_accumulated
-                        delta = current_prefix - cached
-                        non_cached = delta + TOKEN_TASK_THINK
-                        total_cached_by_model[model["name"]] += cached
-                        total_non_cached_by_model[model["name"]] += non_cached
+                        if scenario == "optimistic":
+                            cached = agent_prev_prefix[reactor_id]
+                            current_prefix = TOKEN_STATIC + agent_conv_history[reactor_id] + agent_think[reactor_id] + moderator_summary_accumulated
+                            delta = current_prefix - cached
+                            non_cached = delta + TOKEN_TASK_THINK
+                            total_cached_by_model[model["name"]] += cached
+                            total_non_cached_by_model[model["name"]] += non_cached
+                        else:
+                            total_non_cached_by_model[model["name"]] += reactor_input
 
                         agent_think[reactor_id] += TOKEN_OUT_REACTION
                         agent_prev_prefix[reactor_id] = TOKEN_STATIC + agent_conv_history[reactor_id] + agent_think[reactor_id] + moderator_summary_accumulated
 
-            # Moderator summarizes after round
+            # Moderator summarizes after round (sequential)
             moderator_input = (TOKEN_STATIC + round_speeches_total +
                              moderator_summary_accumulated + TOKEN_TASK_MODERATOR)
             total_input_by_model[moderator_model["name"]] += moderator_input
@@ -665,7 +682,7 @@ def lv4():
             moderator_summary_accumulated += TOKEN_OUT_MODERATOR
             moderator_prev_prefix = TOKEN_STATIC + moderator_summary_accumulated
 
-            # Reflection
+            # Reflection (parallel)
             for agent_id in range(NUM_AGENTS):
                 model = assigned_models[agent_id]
                 reflect_input = (TOKEN_STATIC + agent_think[agent_id] +
@@ -674,17 +691,20 @@ def lv4():
                 total_input_by_model[model["name"]] += reflect_input
                 total_output_by_model[model["name"]] += TOKEN_OUT_REFLECTION
 
-                cached = agent_prev_prefix[agent_id]
-                current_prefix = TOKEN_STATIC + agent_conv_history[agent_id] + agent_think[agent_id] + moderator_summary_accumulated
-                delta = current_prefix - cached
-                non_cached = delta + TOKEN_TASK_REFLECTION
-                total_cached_by_model[model["name"]] += cached
-                total_non_cached_by_model[model["name"]] += non_cached
+                if scenario == "optimistic":
+                    cached = agent_prev_prefix[agent_id]
+                    current_prefix = TOKEN_STATIC + agent_conv_history[agent_id] + agent_think[agent_id] + moderator_summary_accumulated
+                    delta = current_prefix - cached
+                    non_cached = delta + TOKEN_TASK_REFLECTION
+                    total_cached_by_model[model["name"]] += cached
+                    total_non_cached_by_model[model["name"]] += non_cached
+                else:
+                    total_non_cached_by_model[model["name"]] += reflect_input
 
                 agent_think[agent_id] += TOKEN_OUT_REFLECTION
                 agent_prev_prefix[agent_id] = TOKEN_STATIC + agent_conv_history[agent_id] + agent_think[agent_id] + moderator_summary_accumulated
 
-        # Phase 4: Final
+        # Phase 4: Final (parallel)
         for agent_id in range(NUM_AGENTS):
             model = assigned_models[agent_id]
             final_input = (TOKEN_STATIC + agent_think[agent_id] +
@@ -693,12 +713,15 @@ def lv4():
             total_input_by_model[model["name"]] += final_input
             total_output_by_model[model["name"]] += TOKEN_OUT_FINAL
 
-            cached = agent_prev_prefix[agent_id]
-            current_prefix = TOKEN_STATIC + agent_conv_history[agent_id] + agent_think[agent_id] + moderator_summary_accumulated
-            delta = current_prefix - cached
-            non_cached = delta + TOKEN_TASK_FINAL
-            total_cached_by_model[model["name"]] += cached
-            total_non_cached_by_model[model["name"]] += non_cached
+            if scenario == "optimistic":
+                cached = agent_prev_prefix[agent_id]
+                current_prefix = TOKEN_STATIC + agent_conv_history[agent_id] + agent_think[agent_id] + moderator_summary_accumulated
+                delta = current_prefix - cached
+                non_cached = delta + TOKEN_TASK_FINAL
+                total_cached_by_model[model["name"]] += cached
+                total_non_cached_by_model[model["name"]] += non_cached
+            else:
+                total_non_cached_by_model[model["name"]] += final_input
 
     cost_cached = sum((total_cached_by_model[m["name"]] / 1_000_000) * m["cached_input"] for m in model_list)
     cost_non_cached = sum((total_non_cached_by_model[m["name"]] / 1_000_000) * m["input"] for m in model_list)
@@ -708,6 +731,7 @@ def lv4():
 
     return {
         "level": "Lv.4 (planned)",
+        "scenario": scenario,
         "description": "개별 세션, 다중 모델, 사회자",
         "models": {m["name"]: {
             "input_tokens": total_input_by_model[m["name"]],
@@ -732,13 +756,55 @@ def lv4():
 # Main
 # =============================================================================
 
+def print_scenario_results(scenario: str):
+    """Print results for a single scenario."""
+    print(f"\n{'=' * 80}")
+    print(f"시나리오: {scenario.upper()}")
+    if scenario == "conservative":
+        print("  - 병렬 호출: 캐시 없음")
+        print("  - 순차 호출 (speaking): 캐시 적용")
+    else:
+        print("  - 모든 후속 호출: 이전 prefix 캐시 적용")
+    print("=" * 80)
+
+    # Lv.1 (shared session, same for both scenarios)
+    res1 = lv1()
+    print(f"\n[{res1['level']}] {res1['description']}")
+    print(f"  Total: ${res1['cost_total']} | Avg/sample: ${res1['avg_cost_per_sample']}")
+
+    # Lv.2
+    res2 = lv2(scenario=scenario)
+    cache_ratio = res2['cached_input_tokens'] / res2['total_input_tokens'] * 100
+    print(f"\n[{res2['level']}] {res2['description']}")
+    print(f"  Cache ratio: {cache_ratio:.1f}%")
+    print(f"  Total: ${res2['cost_total']} | Avg/sample: ${res2['avg_cost_per_sample']}")
+
+    # Lv.3
+    res3 = lv3(scenario=scenario)
+    cache_ratio = res3['cached_input_tokens'] / res3['total_input_tokens'] * 100
+    print(f"\n[{res3['level']}] {res3['description']}")
+    print(f"  Cache ratio: {cache_ratio:.1f}%")
+    print(f"  Total: ${res3['cost_total']} | Avg/sample: ${res3['avg_cost_per_sample']}")
+
+    # Lv.4
+    res4 = lv4(scenario=scenario)
+    cache_ratio = res4['cached_input_tokens'] / res4['total_input_tokens'] * 100
+    print(f"\n[{res4['level']}] {res4['description']}")
+    print(f"  Cache ratio: {cache_ratio:.1f}%")
+    print(f"  Total: ${res4['cost_total']} | Avg/sample: ${res4['avg_cost_per_sample']}")
+
+    total = res1['cost_total'] + res2['cost_total'] + res3['cost_total'] + res4['cost_total']
+    print(f"\n  전체 합계: ${round(total, 2)}")
+
+    return res1, res2, res3, res4
+
+
 if __name__ == "__main__":
     print("=" * 80)
-    print("포용적 주민참여 LLM 다중 에이전트 시뮬레이션 - API 비용 예측 (캐시 적용)")
+    print("포용적 주민참여 LLM 다중 에이전트 시뮬레이션 - API 비용 예측")
     print(f"설정: {NUM_AGENTS}명 에이전트, {ROUNDS_PER_DEBATE}라운드, {SAMPLES_PER_LV}샘플/레벨")
     print("=" * 80)
 
-    # Calculate API calls per simulation
     api_calls_per_sim = (
         NUM_AGENTS +  # narrative
         NUM_AGENTS +  # initial
@@ -748,110 +814,20 @@ if __name__ == "__main__":
         NUM_AGENTS  # final
     )
     print(f"API 호출 횟수/시뮬레이션: {api_calls_per_sim}회")
-    print(f"  - narrative: {NUM_AGENTS}회")
-    print(f"  - initial: {NUM_AGENTS}회")
-    print(f"  - speaking: {NUM_AGENTS * ROUNDS_PER_DEBATE}회")
-    print(f"  - reaction: {(NUM_AGENTS - 1) * NUM_AGENTS * ROUNDS_PER_DEBATE}회")
-    print(f"  - reflection: {NUM_AGENTS * ROUNDS_PER_DEBATE}회")
-    print(f"  - final: {NUM_AGENTS}회")
-    print("=" * 80)
 
-    results = []
+    # Run both scenarios
+    cons_results = print_scenario_results("conservative")
+    opt_results = print_scenario_results("optimistic")
 
-    # Lv.1
-    res1 = lv1()
-    results.append(res1)
-    print(f"\n[{res1['level']}] {res1['description']}")
-    print(f"  Model: {res1['model']}")
-    print(f"  Input: {res1['total_input_tokens']:,} tokens")
-    print(f"    - Cached:     {res1['cached_input_tokens']:,} tokens (${res1['cost_cached_input']})")
-    print(f"    - Non-cached: {res1['non_cached_input_tokens']:,} tokens (${res1['cost_non_cached_input']})")
-    print(f"  Output: {res1['total_output_tokens']:,} tokens (${res1['cost_output']})")
-    print(f"  Total: ${res1['cost_total']} | Avg/sample: ${res1['avg_cost_per_sample']}")
-
-    # Lv.2
-    res2 = lv2()
-    results.append(res2)
-    print(f"\n[{res2['level']}] {res2['description']}")
-    print(f"  Model: {res2['model']}")
-    print(f"  Input: {res2['total_input_tokens']:,} tokens")
-    print(f"    - Cached:     {res2['cached_input_tokens']:,} tokens (${res2['cost_cached_input']})")
-    print(f"    - Non-cached: {res2['non_cached_input_tokens']:,} tokens (${res2['cost_non_cached_input']})")
-    print(f"  Output: {res2['total_output_tokens']:,} tokens (${res2['cost_output']})")
-    print(f"  Total: ${res2['cost_total']} | Avg/sample: ${res2['avg_cost_per_sample']}")
-    cache_ratio = res2['cached_input_tokens'] / res2['total_input_tokens'] * 100
-    print(f"  Cache hit ratio: {cache_ratio:.1f}%")
-
-    # Lv.3
-    res3 = lv3()
-    results.append(res3)
-    print(f"\n[{res3['level']}] {res3['description']}")
-    print(f"  Input: {res3['total_input_tokens']:,} tokens")
-    print(f"    - Cached:     {res3['cached_input_tokens']:,} tokens (${res3['cost_cached_input']})")
-    print(f"    - Non-cached: {res3['non_cached_input_tokens']:,} tokens (${res3['cost_non_cached_input']})")
-    print(f"  Output: {res3['total_output_tokens']:,} tokens (${res3['cost_output']})")
-    print(f"  Total: ${res3['cost_total']} | Avg/sample: ${res3['avg_cost_per_sample']}")
-    cache_ratio = res3['cached_input_tokens'] / res3['total_input_tokens'] * 100
-    print(f"  Cache hit ratio: {cache_ratio:.1f}%")
-
-    # Lv.4
-    res4 = lv4()
-    results.append(res4)
-    print(f"\n[{res4['level']}] {res4['description']}")
-    print(f"  Input: {res4['total_input_tokens']:,} tokens")
-    print(f"    - Cached:     {res4['cached_input_tokens']:,} tokens (${res4['cost_cached_input']})")
-    print(f"    - Non-cached: {res4['non_cached_input_tokens']:,} tokens (${res4['cost_non_cached_input']})")
-    print(f"  Output: {res4['total_output_tokens']:,} tokens (${res4['cost_output']})")
-    print(f"  Total: ${res4['cost_total']} | Avg/sample: ${res4['avg_cost_per_sample']}")
-    cache_ratio = res4['cached_input_tokens'] / res4['total_input_tokens'] * 100
-    print(f"  Cache hit ratio: {cache_ratio:.1f}%")
-
-    # Summary
+    # Summary comparison
     print("\n" + "=" * 80)
-    print("비용 요약")
+    print("시나리오 비교 요약")
     print("=" * 80)
 
-    total_cost = res1['cost_total'] + res2['cost_total'] + res3['cost_total'] + res4['cost_total']
-    print(f"전체 합계 (Lv1 + Lv2 + Lv3 + Lv4): ${round(total_cost, 2)}")
-    print(f"  - Lv.1: ${res1['cost_total']}")
-    print(f"  - Lv.2: ${res2['cost_total']}")
-    print(f"  - Lv.3: ${res3['cost_total']}")
-    print(f"  - Lv.4: ${res4['cost_total']}")
+    cons_total = sum(r['cost_total'] for r in cons_results)
+    opt_total = sum(r['cost_total'] for r in opt_results)
 
-    print("\n" + "=" * 80)
-    print("모델별 비용 (전체 레벨)")
-    print("=" * 80)
-
-    model_costs = {m["name"]: {"cached": 0, "non_cached": 0, "output": 0, "total": 0} for m in MODELS.values()}
-
-    # Lv.1, Lv.2: gemini only
-    gemini = MODELS["gemini-3-flash-preview"]
-    for res in [res1, res2]:
-        cost_cached = (res["cached_input_tokens"] / 1_000_000) * gemini["cached_input"]
-        cost_non_cached = (res["non_cached_input_tokens"] / 1_000_000) * gemini["input"]
-        cost_out = (res["total_output_tokens"] / 1_000_000) * gemini["output"]
-        model_costs[gemini["name"]]["cached"] += cost_cached
-        model_costs[gemini["name"]]["non_cached"] += cost_non_cached
-        model_costs[gemini["name"]]["output"] += cost_out
-        model_costs[gemini["name"]]["total"] += cost_cached + cost_non_cached + cost_out
-
-    # Lv.3, Lv.4: multi-model
-    for res in [res3, res4]:
-        if "models" in res:
-            for model_name, tokens in res["models"].items():
-                for m in MODELS.values():
-                    if m["name"] == model_name:
-                        cost_cached = (tokens["cached_tokens"] / 1_000_000) * m["cached_input"]
-                        cost_non_cached = (tokens["non_cached_tokens"] / 1_000_000) * m["input"]
-                        cost_out = (tokens["output_tokens"] / 1_000_000) * m["output"]
-                        model_costs[model_name]["cached"] += cost_cached
-                        model_costs[model_name]["non_cached"] += cost_non_cached
-                        model_costs[model_name]["output"] += cost_out
-                        model_costs[model_name]["total"] += cost_cached + cost_non_cached + cost_out
-
-    for model_name, costs in model_costs.items():
-        print(f"  {model_name}:")
-        print(f"    Cached Input:     ${round(costs['cached'], 2)}")
-        print(f"    Non-cached Input: ${round(costs['non_cached'], 2)}")
-        print(f"    Output:           ${round(costs['output'], 2)}")
-        print(f"    Total:            ${round(costs['total'], 2)}")
+    print(f"  Conservative (보수적): ${round(cons_total, 2)}")
+    print(f"  Optimistic (낙관적):   ${round(opt_total, 2)}")
+    print(f"  실측 예상 범위:        ${round(opt_total, 2)} ~ ${round(cons_total, 2)}")
+    print(f"  (실측 캐시 비율 ~56%는 두 시나리오 사이)")
