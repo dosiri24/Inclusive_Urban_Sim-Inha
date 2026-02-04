@@ -159,10 +159,11 @@ def generate_all_personas(
         p["is_vulnerable"] = False
         normal_personas.append(p)
 
-    # Generate vulnerable personas
+    # Generate vulnerable personas (randomly select from available JSON files)
+    selected_paths = random.sample(vulnerable_json_paths, n_vulnerable)
     vulnerable_personas = []
-    for i in range(n_vulnerable):
-        p = generate_vulnerable_persona(vulnerable_json_paths[i])
+    for json_path in selected_paths:
+        p = generate_vulnerable_persona(json_path)
         p["is_vulnerable"] = True
         vulnerable_personas.append(p)
 

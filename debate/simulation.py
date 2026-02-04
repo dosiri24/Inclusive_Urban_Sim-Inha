@@ -18,6 +18,10 @@ from .config import N_ROUNDS, N_AGENTS, N_VULNERABLE, PROMPTS_DIR, OUTPUT_DIR
 from .persona import generate_all_personas
 from .parser import parse_response, parse_think, parse_initial_opinion
 from .logger import DebateLogger
+from prompts.tasks import (
+    get_narrative_task, get_initial_task, get_speaking_task,
+    get_think_task, get_reflection_task, get_final_task
+)
 
 logger = logging.getLogger("debate.simulation")
 
@@ -70,7 +74,7 @@ def _persona_to_prompt(persona: dict) -> str:
         f"주거유형: {persona['주거유형']}\n"
         f"자가여부: {persona['자가여부']}\n"
         f"매수동기: {persona['매수동기']}\n"
-        f"소득수준: {persona['소득수준']}\n"
+        f"연소득: {persona['소득수준']}\n"
         f"거주기간: {persona['거주기간']}년\n"
         f"가구구성: {persona['가구구성']}\n"
         f"재개발지식: {persona['재개발지식']}\n"
@@ -199,23 +203,13 @@ class DebateSimulation:
         # === 0-1. Pre-debate: Generate narrative background (parallel) ===
         logger.info("=== Generating narrative backgrounds ===")
 
-        narrative_task = (
-            "당신은 주안2 미추5구역에 사는 주민입니다. 주어진 페르소나를 바탕으로 다음 질문에 자연스럽게 답하세요.\n"
-            "1. 이 동네에 어떻게 오게 되었나요?\n"
-            "2. 재개발에 대해 어디서, 누구에게, 어떻게 들었나요?\n"
-            "3. '비례율', '분담금', '조합', '감정평가' 같은 재개발 용어를 들어본 적 있나요? 어느 정도 이해하고 있나요?\n"
-            "4. 재개발이 되면 당신의 생활은 어떻게 바뀔 것 같나요?\n"
-            "5. 구체적으로 어떤 일을 하고, 대략적인 하루 일과가 어떻게 되나요?\n"
-            "6. 이 동네에서 자주 만나는 이웃이 있나요? 혹은 동네 모임이나 반상회에 참여하나요?\n"
-            "7. 여러 사람이 모여서 의견이 갈릴 때 당신은 보통 어떻게 행동하나요?\n"
-            "8. 재개발 외에 요즘 가장 신경 쓰이는 생활 문제가 있나요? (예: 자녀교육, 건강, 경제적 문제 등)\n\n"
-            "자연스러운 문장으로 답하세요. JSON이나 마크다운 형식 없이 일반 텍스트로만 작성하세요."
-        )
+        narrative_task = get_narrative_task()
 
         def generate_narrative(resident_id):
             agent = self.agents[resident_id]["agent"]
             response = agent.respond(narrative_task)
-            return resident_id, response
+            parsed = parse_think(response)
+            return resident_id, parsed["생각"]
 
         with ThreadPoolExecutor(max_workers=len(resident_ids)) as executor:
             futures = {executor.submit(generate_narrative, aid): aid for aid in resident_ids}
@@ -247,11 +241,7 @@ class DebateSimulation:
         # === 0-2. Pre-debate: Form initial opinions (parallel) ===
         logger.info("=== Forming initial opinions ===")
 
-        initial_task = (
-            "토론이 시작되기 전입니다. 아직 다른 주민의 의견을 듣지 않은 상태에서, "
-            "당신의 페르소나와 상황을 바탕으로 미추5구역 촉진계획 세부안에 대한 당신의 입장과 조건,직 우려 등을 이야기해주세요. "
-            f'Mode4 형식으로 JSON만 출력. 마크다운 금지.'
-        )
+        initial_task = get_initial_task()
 
         def form_initial_opinion(resident_id):
             agent = self.agents[resident_id]["agent"]
@@ -304,7 +294,7 @@ class DebateSimulation:
                 speaker_persona = speaker_data["persona"]
 
                 # Request speech
-                task = f'현재 {round_num}라운드입니다. 당신의 발화 차례입니다. 반드시 {{"발화": "...", "지목": "..." or null, "입장": "..."}} JSON만 출력하세요.'
+                task = get_speaking_task(round_num)
                 response = speaker_agent.respond(task)
                 parsed = parse_response(response)
 
@@ -333,15 +323,7 @@ class DebateSimulation:
                 other_ids = [aid for aid in resident_ids if aid != speaker_id]
 
                 def do_think(other_id):
-                    think_task = (
-                        f"[주의] 당신은 {other_id}입니다. 대화기록에서 {other_id}의 발언은 당신 자신의 발언입니다.\n\n"
-                        f"{speaker_id}의 발화(코드: {response_code}): "
-                        f"'{parsed['발화'][:100]}'\n"
-                        f'상대방이 왜 그렇게 말했는지, 그리고 당신({other_id})은 어떻게 생각하는지 정리하세요. '
-                        f'{{"상대의견": "{response_code}", '
-                        f'"반응유형": "공감/비판/인용/질문/무시 중 택1", '
-                        f'"생각": "..."}} JSON만 출력하세요.'
-                    )
+                    think_task = get_think_task(other_id, speaker_id, response_code, parsed["발화"])
                     agent = self.agents[other_id]["agent"]
                     response = agent.respond(think_task)
                     return other_id, parse_think(response)
@@ -375,12 +357,7 @@ class DebateSimulation:
             logger.info(f"=== Round {round_num} reflection ===")
 
             def do_reflect(resident_id):
-                reflection_task = (
-                    f"[주의] 당신은 {resident_id}입니다. 대화기록에서 {resident_id}의 발언은 당신 자신의 발언입니다.\n\n"
-                    f"{round_num}라운드가 끝났습니다. "
-                    f"지금까지 들은 의견 중 가장 기억에 남는 것과 그 이유를 당신({resident_id})의 관점에서 정리하세요. "
-                    f'반드시 {{"생각": "..."}} JSON만 출력하세요. 상대의견 필드는 포함하지 마세요.'
-                )
+                reflection_task = get_reflection_task(resident_id, round_num)
                 agent = self.agents[resident_id]["agent"]
                 response = agent.respond(reflection_task)
                 return resident_id, parse_think(response)
@@ -414,11 +391,7 @@ class DebateSimulation:
         # === 5. Post-debate: Form final opinions (parallel) ===
         logger.info("=== Forming final opinions ===")
 
-        final_task = (
-            "토론이 모두 끝났습니다. 다른 주민들의 의견을 모두 들은 지금, "
-            "미추5구역 촉진계획 세부안에 대한 당신의 최종 입장은 어떻습니까? "
-            'Mode4 형식으로 JSON만 출력. 마크다운 금지.'
-        )
+        final_task = get_final_task()
 
         def form_final_opinion(resident_id):
             agent = self.agents[resident_id]["agent"]
