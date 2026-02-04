@@ -131,16 +131,22 @@ class DebateSimulation:
         # Generate personas
         self.personas = generate_all_personas(n_agents, n_vulnerable)
 
-        # Assign models to each agent (only enabled ones)
-        available_models = get_enabled_models()
-        if self.fixed_model:
-            # Use specified model for all agents (testing)
+        # Assign models to each agent
+        if isinstance(self.fixed_model, list):
+            # Use specified model list (random choice from list)
+            self.agent_models = {
+                p["resident_id"]: random.choice(self.fixed_model)
+                for p in self.personas
+            }
+        elif self.fixed_model:
+            # Use single model for all agents
             self.agent_models = {
                 p["resident_id"]: self.fixed_model
                 for p in self.personas
             }
         else:
-            # Random assignment
+            # Random assignment from enabled models
+            available_models = get_enabled_models()
             self.agent_models = {
                 p["resident_id"]: random.choice(available_models)
                 for p in self.personas
@@ -298,7 +304,7 @@ class DebateSimulation:
                 speaker_persona = speaker_data["persona"]
 
                 # Request speech
-                task = '당신의 발화 차례입니다. 반드시 {"발화": "...", "지목": "..." or null, "입장": "..."} JSON만 출력하세요.'
+                task = f'현재 {round_num}라운드입니다. 당신의 발화 차례입니다. 반드시 {{"발화": "...", "지목": "..." or null, "입장": "..."}} JSON만 출력하세요.'
                 response = speaker_agent.respond(task)
                 parsed = parse_response(response)
 

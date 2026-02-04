@@ -20,5 +20,5 @@ class Agent:
         """
         self.memory.set_task(task)
         messages = build_prompt(self.memory)
-        response = self.llm.chat(messages)
+        response = self.llm.chat_with_retry(messages)
         return response

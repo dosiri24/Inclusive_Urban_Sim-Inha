@@ -34,6 +34,10 @@ def parse_response(response: str) -> dict:
         dict with keys: 발화, 지목, 입장
         On parse failure, returns default values with raw response
     """
+    if response is None:
+        logger.warning("Response is None")
+        return {"발화": "[응답 없음]", "지목": None, "입장": None}
+
     default = {
         "발화": response,
         "지목": None,
@@ -55,7 +59,8 @@ def parse_response(response: str) -> dict:
         }
 
     except json.JSONDecodeError as e:
-        logger.warning(f"JSON parse error: {e}, response: {response[:100]}...")
+        preview = response[:100] if len(response) > 100 else response
+        logger.warning(f"JSON parse error: {e}, response: {preview}...")
         return default
 
 
@@ -70,6 +75,10 @@ def parse_think(response: str) -> dict:
         dict with keys: 상대의견, 반응유형, 생각
         On parse failure, returns default values with raw response
     """
+    if response is None:
+        logger.warning("Response is None")
+        return {"상대의견": None, "반응유형": None, "생각": "[응답 없음]"}
+
     default = {
         "상대의견": None,
         "반응유형": None,
@@ -87,7 +96,8 @@ def parse_think(response: str) -> dict:
         }
 
     except json.JSONDecodeError as e:
-        logger.warning(f"JSON parse error: {e}, response: {response[:100]}...")
+        preview = response[:100] if len(response) > 100 else response
+        logger.warning(f"JSON parse error: {e}, response: {preview}...")
         return default
 
 
@@ -101,6 +111,10 @@ def parse_initial_opinion(response: str) -> dict:
     Returns:
         dict with keys: 입장, 생각
     """
+    if response is None:
+        logger.warning("Response is None")
+        return {"입장": "무관심", "생각": "[응답 없음]"}
+
     default = {
         "입장": "무관심",
         "생각": response
@@ -116,5 +130,6 @@ def parse_initial_opinion(response: str) -> dict:
         }
 
     except json.JSONDecodeError as e:
-        logger.warning(f"JSON parse error: {e}, response: {response[:100]}...")
+        preview = response[:100] if len(response) > 100 else response
+        logger.warning(f"JSON parse error: {e}, response: {preview}...")
         return default
