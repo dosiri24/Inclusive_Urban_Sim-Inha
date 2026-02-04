@@ -57,7 +57,7 @@ PERSONA_CONFIG = {
     },
 
     # 소득수준 (미추홀구) - datas/전국 시군구 단위 소득 구간대별 주민 비율 코리아크레딧뷰로.csv
-    "소득수준": {
+    "연소득": {
         "2천만원대": 0.08,
         "3천만원대": 0.41,
         "4천만원대": 0.27,
@@ -69,10 +69,10 @@ PERSONA_CONFIG = {
 
     # 거주기간 (인천시) - datas/(일반가구)행정구역별 현재주택 거주기간 (인천)(2024).xlsx
     "거주기간": {
-        "1-5년": {"비율": 0.52, "평균": 3},
-        "5-10년": {"비율": 0.21, "평균": 7},
-        "10-20년": {"비율": 0.18, "평균": 15},
-        "20년 이상": {"비율": 0.09, "평균": 25}
+        "1-5년": 0.52,
+        "5-10년": 0.21,
+        "10-20년": 0.18,
+        "20년 이상": 0.09
     },
 
     # 가구구성 (미추홀구) - datas/성, 연령 및 세대구성별 인구 - 시군구.csv
@@ -111,7 +111,17 @@ BIGFIVE_TRAITS = ["개방성", "성실성", "외향성", "친화성", "신경성
 
 N_ROUNDS = 3              # Number of debate rounds
 N_AGENTS = 20             # Total number of agents
-N_VULNERABLE = 4          # Number of vulnerable agents
+N_VULNERABLE = 4          # Number of vulnerable agents to select
+N_VULNERABLE_POOL = 8     # Total vulnerable persona files available
 PROMPTS_DIR = "prompts/"  # Directory for prompt files
 OUTPUT_DIR = "outputs/"   # Directory for output CSV files
+
+# =============================================================================
+# Vulnerable Persona Fields (can be set in JSON or "random"/None for config distribution)
+# =============================================================================
+
+VULNERABLE_FIELDS = [
+    "연령대", "성별", "직업", "주거유형", "자가여부",
+    "연소득", "거주기간", "가구구성", "재개발지식"
+]
 

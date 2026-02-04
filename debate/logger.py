@@ -44,7 +44,7 @@ class DebateLogger:
         # CSV column headers
         self.debate_columns = [
             "code", "set_id", "level", "round", "turn",
-            "resident_id", "model", "is_vulnerable", "persona_summary",
+            "resident_id", "model", "is_vulnerable", "취약유형", "persona_summary",
             "발화", "지목", "입장"
         ]
         self.think_columns = [
@@ -59,6 +59,7 @@ class DebateLogger:
         agent_id: str,
         model: str,
         is_vulnerable: bool,
+        취약유형: str,
         persona_summary: str,
         발화: str,
         지목: str,
@@ -66,6 +67,9 @@ class DebateLogger:
     ) -> str:
         """
         Log one debate response.
+
+        Args:
+            취약유형: Vulnerability type (e.g., "경제적_기초수급자"), "N/A" for non-vulnerable
 
         Returns:
             Generated code for this response
@@ -81,6 +85,7 @@ class DebateLogger:
             "resident_id": agent_id,
             "model": model,
             "is_vulnerable": is_vulnerable,
+            "취약유형": 취약유형,
             "persona_summary": persona_summary,
             "발화": 발화,
             "지목": 지목,

@@ -74,7 +74,7 @@ def _persona_to_prompt(persona: dict) -> str:
         f"주거유형: {persona['주거유형']}\n"
         f"자가여부: {persona['자가여부']}\n"
         f"매수동기: {persona['매수동기']}\n"
-        f"연소득: {persona['소득수준']}\n"
+        f"연소득: {persona['연소득']}\n"
         f"거주기간: {persona['거주기간']}\n"
         f"가구구성: {persona['가구구성']}\n"
         f"재개발지식: {persona['재개발지식']}\n"
@@ -305,6 +305,7 @@ class DebateSimulation:
                     agent_id=speaker_id,
                     model=speaker_data["model"],
                     is_vulnerable=speaker_persona["is_vulnerable"],
+                    취약유형=speaker_persona.get("취약유형", "N/A"),
                     persona_summary=_persona_to_summary(speaker_persona),
                     발화=parsed["발화"],
                     지목=parsed["지목"],
@@ -443,7 +444,7 @@ class DebateSimulation:
         columns = [
             "resident_id", "model", "is_vulnerable",
             "연령대", "성별", "직업", "주거유형", "자가여부", "매수동기",
-            "소득수준", "거주기간", "가구구성", "재개발지식",
+            "연소득", "거주기간", "가구구성", "재개발지식",
             "개방성", "성실성", "외향성", "친화성", "신경성",
             "initial_stance", "final_stance"
         ]
@@ -463,7 +464,7 @@ class DebateSimulation:
                 "주거유형": persona["주거유형"],
                 "자가여부": persona["자가여부"],
                 "매수동기": persona["매수동기"],
-                "소득수준": persona["소득수준"],
+                "연소득": persona["연소득"],
                 "거주기간": persona["거주기간"],
                 "가구구성": persona["가구구성"],
                 "재개발지식": persona["재개발지식"],
