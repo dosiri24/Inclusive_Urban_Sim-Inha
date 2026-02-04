@@ -24,8 +24,8 @@ import random
 # Simulation Settings
 # =============================================================================
 
-NUM_AGENTS = 20
-SAMPLES_PER_LV = 20
+NUM_AGENTS = 10
+SAMPLES_PER_LV = 30
 ROUNDS_PER_DEBATE = 3
 
 # =============================================================================

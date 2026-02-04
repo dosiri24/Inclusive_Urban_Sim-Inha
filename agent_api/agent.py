@@ -1,4 +1,4 @@
-"""Agent"""
+"""Agent with cache support for Gemini."""
 
 from .memory import Memory
 from .prompt_builder import build_prompt
@@ -25,3 +25,17 @@ class Agent:
         prompt_data = build_prompt(self.memory)
         response, usage = self.llm.chat_with_retry(prompt_data)
         return response, usage
+
+    def refresh_cache(self) -> bool:
+        """
+        Refresh LLM cache with current memory content.
+        Only works for Gemini model.
+
+        Returns:
+            True if cache was refreshed, False otherwise.
+        """
+        if not hasattr(self.llm, 'refresh_cache'):
+            return False
+
+        prompt_data = build_prompt(self.memory)
+        return self.llm.refresh_cache(prompt_data["system"], prompt_data["timeline"])

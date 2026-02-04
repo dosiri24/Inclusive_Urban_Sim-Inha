@@ -28,34 +28,42 @@ def parse_response(response: str) -> dict:
     Parse agent debate response (JSON string).
 
     Expected format:
-        {"발화": "...", "지목": "resident_05" or null, "입장": "찬성"}
+        {"발화": "...", "지목": [{"대상": "resident_05", "입장": "공감"}, ...]}
 
     Returns:
-        dict with keys: 발화, 지목, 입장
+        dict with keys: 발화, 지목 (list of dicts)
         On parse failure, returns default values with raw response
     """
     if response is None:
         logger.warning("Response is None")
-        return {"발화": "[응답 없음]", "지목": None, "입장": None}
+        return {"발화": "[응답 없음]", "지목": []}
 
     default = {
         "발화": response,
-        "지목": None,
-        "입장": None
+        "지목": []
     }
 
     try:
         cleaned = _strip_markdown(response)
         parsed = json.loads(cleaned)
 
-        지목 = parsed.get("지목", None)
-        # 입장 is only valid when 지목 is specified
-        입장 = parsed.get("입장", None) if 지목 else None
+        지목_raw = parsed.get("지목", [])
+
+        # Normalize 지목 to list format
+        if 지목_raw is None:
+            지목 = []
+        elif isinstance(지목_raw, str):
+            # Legacy format: single string "resident_XX"
+            입장 = parsed.get("입장", None)
+            지목 = [{"대상": 지목_raw, "입장": 입장}] if 지목_raw else []
+        elif isinstance(지목_raw, list):
+            지목 = 지목_raw
+        else:
+            지목 = []
 
         return {
             "발화": parsed.get("발화", response),
-            "지목": 지목,
-            "입장": 입장
+            "지목": 지목
         }
 
     except json.JSONDecodeError as e:

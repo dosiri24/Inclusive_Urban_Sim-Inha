@@ -8,6 +8,7 @@ Contains:
 """
 
 import csv
+import json
 import logging
 from pathlib import Path
 
@@ -64,7 +65,7 @@ class DebateLogger:
         self.debate_columns = [
             "code", "set_id", "level", "round", "turn",
             "resident_id", "model", "is_vulnerable", "취약유형", "persona_summary",
-            "발화", "지목", "입장"
+            "발화", "지목"
         ]
         self.think_columns = [
             "code", "set_id", "level", "round", "turn",
@@ -81,11 +82,13 @@ class DebateLogger:
         취약유형: str,
         persona_summary: str,
         발화: str,
-        지목: str,
-        입장: str
+        지목: list
     ) -> str:
         """Log one debate response. Returns generated code."""
         code = _generate_code(agent_id, round, turn, "r")
+
+        # Serialize 지목 list to JSON string for CSV storage
+        지목_str = json.dumps(지목, ensure_ascii=False) if 지목 else "[]"
 
         self.debate_buffer.append({
             "code": code,
@@ -99,8 +102,7 @@ class DebateLogger:
             "취약유형": 취약유형,
             "persona_summary": persona_summary,
             "발화": 발화,
-            "지목": 지목,
-            "입장": 입장
+            "지목": 지목_str
         })
 
         return code

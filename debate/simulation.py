@@ -285,6 +285,9 @@ class DebateSimulation:
         # Save agent list (with initial opinions)
         self._save_agent_list(initial_opinions=initial_opinions)
 
+        # Refresh cache after round 0 (initial phase)
+        self._refresh_all_caches()
+
         for round_num in range(1, self.n_rounds + 1):
             logger.info(f"=== Round {round_num} started ===")
 
@@ -312,8 +315,7 @@ class DebateSimulation:
                     취약유형=speaker_persona.get("취약유형", "N/A"),
                     persona_summary=_persona_to_summary(speaker_persona),
                     발화=parsed["발화"],
-                    지목=parsed["지목"],
-                    입장=parsed["입장"]
+                    지목=parsed["지목"]
                 )
                 self.token_logger.log(
                     agent_id=speaker_id,
@@ -425,6 +427,9 @@ class DebateSimulation:
             # Auto-save after reflections
             self.logger.save()
             self.token_logger.save()
+
+            # Refresh cache after each round
+            self._refresh_all_caches()
 
         # === 5. Post-debate: Form final opinions (parallel) ===
         logger.info("=== Forming final opinions ===")
@@ -540,3 +545,12 @@ class DebateSimulation:
             writer.writerows(rows)
 
         logger.info(f"Agent list saved: {agent_list_path}")
+
+    def _refresh_all_caches(self):
+        """Refresh LLM caches for all agents (Gemini only)."""
+        refreshed = 0
+        for resident_id, agent_data in self.agents.items():
+            if agent_data["agent"].refresh_cache():
+                refreshed += 1
+        if refreshed > 0:
+            logger.info(f"Refreshed {refreshed} agent caches")
