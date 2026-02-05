@@ -133,7 +133,7 @@ def parse_initial_opinion(response: str) -> dict:
         parsed = json.loads(cleaned)
 
         return {
-            "입장": parsed.get("입장", "무관심"),
+            "입장": parsed.get("입장", "무관심").replace(" ", ""),
             "생각": parsed.get("생각", response)
         }
 
@@ -141,3 +141,129 @@ def parse_initial_opinion(response: str) -> dict:
         preview = response[:100] if len(response) > 100 else response
         logger.warning(f"JSON parse error: {e}, response: {preview}...")
         return default
+
+
+# =============================================================================
+# Lv.1 Batch Parsers
+# =============================================================================
+
+
+def parse_batch_narrative(response: str) -> dict:
+    """
+    Parse batch narrative response (JSON array).
+
+    Expected format:
+        [{"resident_id": "resident_01", "서사": "..."}, ...]
+
+    Returns:
+        dict mapping resident_id to narrative string
+    """
+    if response is None:
+        logger.warning("Response is None")
+        return {}
+
+    try:
+        cleaned = _strip_markdown(response)
+        parsed = json.loads(cleaned)
+
+        if not isinstance(parsed, list):
+            logger.warning("Expected JSON array for batch narrative")
+            return {}
+
+        return {
+            item.get("resident_id"): item.get("서사", "")
+            for item in parsed
+            if item.get("resident_id")
+        }
+
+    except json.JSONDecodeError as e:
+        preview = response[:100] if len(response) > 100 else response
+        logger.warning(f"Batch narrative parse error: {e}, response: {preview}...")
+        return {}
+
+
+def parse_batch_opinion(response: str) -> dict:
+    """
+    Parse batch opinion response (JSON array).
+
+    Expected format:
+        [{"resident_id": "resident_01", "입장": "찬성", "생각": "..."}, ...]
+
+    Returns:
+        dict mapping resident_id to {"입장": str, "생각": str}
+    """
+    if response is None:
+        logger.warning("Response is None")
+        return {}
+
+    try:
+        cleaned = _strip_markdown(response)
+        parsed = json.loads(cleaned)
+
+        if not isinstance(parsed, list):
+            logger.warning("Expected JSON array for batch opinion")
+            return {}
+
+        return {
+            item.get("resident_id"): {
+                "입장": item.get("입장", "무관심").replace(" ", ""),
+                "생각": item.get("생각", "")
+            }
+            for item in parsed
+            if item.get("resident_id")
+        }
+
+    except json.JSONDecodeError as e:
+        preview = response[:100] if len(response) > 100 else response
+        logger.warning(f"Batch opinion parse error: {e}, response: {preview}...")
+        return {}
+
+
+def parse_batch_speech(response: str) -> list | None:
+    """Parse batch speech response. Returns None on format error (signals retry needed)."""
+    if response is None:
+        logger.warning("Response is None")
+        return None
+
+    try:
+        cleaned = _strip_markdown(response)
+        parsed = json.loads(cleaned)
+
+        if not isinstance(parsed, list):
+            logger.warning("Expected JSON array for batch speech")
+            return None
+
+        results = []
+        for item in parsed:
+            resident_id = item.get("resident_id")
+            if not resident_id:
+                continue
+
+            지목_raw = item.get("지목", [])
+            if 지목_raw is None:
+                지목 = []
+            elif isinstance(지목_raw, str):
+                지목 = [{"대상": 지목_raw, "입장": None}] if 지목_raw else []
+            elif isinstance(지목_raw, list):
+                지목 = []
+                for j in 지목_raw:
+                    if isinstance(j, dict) and "대상" in j:
+                        지목.append({"대상": j["대상"], "입장": j.get("입장", "")})
+                    else:
+                        logger.warning(f"Invalid 지목 format from {resident_id}: {j}")
+                        return None
+            else:
+                지목 = []
+
+            results.append({
+                "resident_id": resident_id,
+                "발화": item.get("발화", ""),
+                "지목": 지목
+            })
+
+        return results
+
+    except json.JSONDecodeError as e:
+        preview = response[:100] if len(response) > 100 else response
+        logger.warning(f"Batch speech parse error: {e}, response: {preview}...")
+        return None

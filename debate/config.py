@@ -110,8 +110,8 @@ BIGFIVE_TRAITS = ["개방성", "성실성", "외향성", "친화성", "신경성
 # =============================================================================
 
 N_ROUNDS = 3              # Number of debate rounds
-N_AGENTS = 20             # Total number of agents
-N_VULNERABLE = 4          # Number of vulnerable agents to select
+N_AGENTS = 10             # Total number of agents
+N_VULNERABLE = 2          # Number of vulnerable agents to select
 N_VULNERABLE_POOL = 8     # Total vulnerable persona files available
 PROMPTS_DIR = "prompts/"  # Directory for prompt files
 OUTPUT_DIR = "outputs/"   # Directory for output CSV files
