@@ -26,6 +26,9 @@ class Memory:
         # 6: task slot
         self.task = ""
 
+        # Cache tracking: index of timeline items included in last cache
+        self.cached_timeline_index = 0
+
     def add_utterance(self, speaker: str, content: str):
         """Add other agent's utterance to timeline"""
         self.timeline.append({"type": "utterance", "speaker": speaker, "content": content})
@@ -42,13 +45,19 @@ class Memory:
         """Set current task (slot 6)"""
         self.task = task
 
+    def mark_cached(self):
+        """Mark current timeline length as cached."""
+        self.cached_timeline_index = len(self.timeline)
+
     def get_all(self) -> dict:
-        """Return all memory slots"""
+        """Return all memory slots with cached/new timeline separation."""
         return {
             "system_context": self.system_context,
             "debate_rule": self.debate_rule,
             "local_context": self.local_context,
             "persona": self.persona,
             "timeline": self.timeline,
+            "cached_timeline": self.timeline[:self.cached_timeline_index],
+            "new_timeline": self.timeline[self.cached_timeline_index:],
             "task": self.task,
         }

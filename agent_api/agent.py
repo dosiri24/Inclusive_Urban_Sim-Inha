@@ -38,4 +38,7 @@ class Agent:
             return False
 
         prompt_data = build_prompt(self.memory)
-        return self.llm.refresh_cache(prompt_data["system"], prompt_data["timeline"])
+        result = self.llm.refresh_cache(prompt_data["system"], prompt_data["timeline"])
+        if result:
+            self.memory.mark_cached()
+        return result

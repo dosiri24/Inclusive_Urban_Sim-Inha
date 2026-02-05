@@ -77,8 +77,12 @@ class GeminiLLM(BaseLLM):
 
     def chat(self, prompt_data: dict) -> tuple[str, dict]:
         if self.cache_name:
-            # Use cached content: only send task as new content
-            contents = prompt_data["task"]
+            # Use cached content: send new_timeline + task as new content
+            new_parts = []
+            if prompt_data.get("new_timeline"):
+                new_parts.append(prompt_data["new_timeline"])
+            new_parts.append(prompt_data["task"])
+            contents = "\n\n".join(new_parts)
             config = self.types.GenerateContentConfig(
                 cached_content=self.cache_name,
                 automatic_function_calling=self.types.AutomaticFunctionCallingConfig(disable=True)

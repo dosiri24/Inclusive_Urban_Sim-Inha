@@ -3,15 +3,29 @@
 from .memory import Memory
 
 
+def _format_timeline_items(items: list) -> list[str]:
+    """Convert timeline items to formatted strings."""
+    lines = []
+    for item in items:
+        if item["type"] == "utterance":
+            lines.append(f"[{item['speaker']}]: {item['content']}")
+        elif item["type"] == "my_utterance":
+            lines.append(f"[Me]: {item['content']}")
+        elif item["type"] == "my_think":
+            lines.append(f"[My Thought]: {item['content']}")
+    return lines
+
+
 def build_prompt(memory: Memory) -> dict:
     """
     Build structured prompt data from memory slots.
 
     Returns:
         {
-            "system": str,    # slot 1~4 combined
-            "timeline": str,  # slot 5
-            "task": str       # slot 6
+            "system": str,        # slot 1~4 combined
+            "timeline": str,      # slot 5 (full timeline)
+            "new_timeline": str,  # items added after last cache
+            "task": str           # slot 6
         }
     """
     m = memory.get_all()
@@ -33,20 +47,19 @@ def build_prompt(memory: Memory) -> dict:
 
     system_content = "\n\n".join(system_parts)
 
-    # === timeline (slot 5) ===
-    timeline_lines = []
-    for item in m["timeline"]:
-        if item["type"] == "utterance":
-            timeline_lines.append(f"[{item['speaker']}]: {item['content']}")
-        elif item["type"] == "my_utterance":
-            timeline_lines.append(f"[Me]: {item['content']}")
-        elif item["type"] == "my_think":
-            timeline_lines.append(f"[My Thought]: {item['content']}")
-
+    # === full timeline (slot 5) ===
+    timeline_lines = _format_timeline_items(m["timeline"])
     if timeline_lines:
         timeline_content = "[Timeline]\n" + "\n".join(timeline_lines)
     else:
         timeline_content = "[Timeline]\n(empty)"
+
+    # === new timeline (items after last cache) ===
+    new_lines = _format_timeline_items(m["new_timeline"])
+    if new_lines:
+        new_timeline_content = "[New Events]\n" + "\n".join(new_lines)
+    else:
+        new_timeline_content = ""
 
     # === task (slot 6) ===
     if m["task"]:
@@ -57,5 +70,6 @@ def build_prompt(memory: Memory) -> dict:
     return {
         "system": system_content,
         "timeline": timeline_content,
+        "new_timeline": new_timeline_content,
         "task": task_content
     }
