@@ -279,7 +279,7 @@ def parse_planner_result(response: str) -> dict:
     Parse planner synthesis response.
 
     Expected format:
-        {"논쟁요소": [{"주제": str, "쟁점요약": str, "절충안": str}], "최종합의문": str}
+        {"논쟁요소": [{"주제": str, "주민의견": str, "계획안분석": str, "절충안": str}], "최종합의문": str}
     """
     if response is None:
         logger.warning("Response is None")

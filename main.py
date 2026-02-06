@@ -19,7 +19,7 @@ from evaluation.run import evaluate_set
 
 if __name__ == "__main__":
     # Lv.1
-    for set_id in range(7, 11):
+    for set_id in range(11, 11):
         sim = DebateSimulationLv1(
             set_id=set_id, n_rounds=3, n_agents=10, n_vulnerable=2,
             output_dir="outputs/lv1/", model="gemini",
