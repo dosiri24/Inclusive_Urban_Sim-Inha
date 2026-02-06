@@ -78,12 +78,14 @@ def get_reflection_task(resident_id: str, round_num: int) -> str:
 {{"생각": "당신의 생각"}}"""
 
 
-# Generate final opinion task (MODE 4).
-def get_final_task() -> str:
-    return """토의가 모두 끝났습니다. 다른 주민들의 의견을 모두 들은 지금, 미추5구역 촉진계획 세부안에 대한 당신의 최종 만족도는 어떻습니까?
+# Generate final speech task (debate format with stance).
+def get_final_speech_task() -> str:
+    return """토의가 모두 끝났습니다. 다른 주민들의 의견을 모두 들은 지금, 마지막으로 한마디 해주세요.
+토의를 통해 느낀 점, 바뀐 생각, 유지하는 입장 등을 자유롭게 발언해주세요.
+마지막 발언이므로 다른 주민을 지목하지 마세요.
 
 응답 형식:
-{"입장": "매우불만족/불만족/만족/매우만족 중 택1", "생각": "당신의 최종 생각과 이유, 조건 등"}"""
+{"발화": "당신의 최종 발언"}"""
 
 
 # =============================================================================
@@ -150,17 +152,17 @@ def get_lv1_speaking_task(round_num: int) -> str:
 ]"""
 
 
-def get_lv1_final_task() -> str:
-    """Generate batch final opinion task."""
-    return """토의이 모두 끝났습니다. 각 주민의 최종 입장을 작성하세요.
+def get_lv1_final_speech_task() -> str:
+    """Generate batch final speech task (debate format)."""
+    return """토의가 모두 끝났습니다. 각 주민이 마지막으로 한마디씩 발언합니다.
 
-각 주민은 토의을 통해 들은 의견을 바탕으로 최종 입장을 정하세요.
-처음과 달라졌다면 무엇 때문인지 포함하세요.
+각 주민은 토의를 통해 느낀 점, 바뀐 생각, 유지하는 입장 등을 자유롭게 발언해주세요.
+마지막 발언이므로 다른 주민을 지목하지 마세요.
 
 응답 형식 (JSON 배열):
 [
-  {"resident_id": "resident_01", "입장": "매우불만족/불만족/만족/매우만족 중 택1", "생각": "..."},
-  {"resident_id": "resident_02", "입장": "...", "생각": "..."},
+  {"resident_id": "resident_01", "발화": "..."},
+  {"resident_id": "resident_02", "발화": "..."},
   ...
 ]"""
 

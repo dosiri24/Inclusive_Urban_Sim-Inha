@@ -20,7 +20,7 @@ from .parser import parse_response, parse_think, parse_initial_opinion, parse_vo
 from .planner import compile_debate_text, compile_final_opinions, run_planner
 from prompts.tasks import (
     get_narrative_task, get_initial_task, get_speaking_task,
-    get_think_task, get_reflection_task, get_final_task, get_vote_task
+    get_think_task, get_reflection_task, get_final_speech_task, get_vote_task
 )
 
 logger = logging.getLogger("debate.simulation")
@@ -432,56 +432,59 @@ class DebateSimulation:
             # Refresh cache after each round
             self._refresh_all_caches()
 
-        # === 5. Post-debate: Form final opinions (parallel) ===
-        logger.info("=== Forming final opinions ===")
+        # === 5. Post-debate: Final speech (debate format, parallel) ===
+        logger.info("=== Final speeches ===")
 
-        final_task = get_final_task()
+        final_task = get_final_speech_task()
 
-        def form_final_opinion(resident_id):
+        def do_final_speech(resident_id):
             agent = self.agents[resident_id]["agent"]
             response, usage = agent.respond(final_task)
-            return resident_id, parse_initial_opinion(response), usage
+            return resident_id, parse_response(response), usage
 
         with ThreadPoolExecutor(max_workers=len(resident_ids)) as executor:
-            futures = {executor.submit(form_final_opinion, aid): aid for aid in resident_ids}
-            final_opinions = {}
+            futures = {executor.submit(do_final_speech, aid): aid for aid in resident_ids}
+            final_parsed = {}
             usages = {}
             for future in as_completed(futures):
                 resident_id, parsed, usage = future.result()
-                final_opinions[resident_id] = parsed
+                final_parsed[resident_id] = parsed
                 usages[resident_id] = usage
 
-        # Log final opinions
+        # Log final speeches as debate entries + build final_opinions for planner
+        final_opinions = {}
         final_turn = 1
         for resident_id in resident_ids:
-            opinion = final_opinions[resident_id]
-            self.agents[resident_id]["final_stance"] = opinion["입장"]
-            self.logger.log_think(
+            parsed = final_parsed[resident_id]
+            persona = self.agents[resident_id]["persona"]
+
+            self.logger.log_debate(
                 round=self.n_rounds + 1,
                 turn=final_turn,
                 agent_id=resident_id,
-                think_type="final",
-                상대의견=opinion["입장"],
-                반응유형=None,
-                생각=opinion["생각"]
+                model=self.agents[resident_id]["model"],
+                is_vulnerable=persona["is_vulnerable"],
+                취약유형=persona.get("취약유형", "N/A"),
+                persona_summary=_persona_to_summary(persona),
+                발화=parsed["발화"],
+                지목=parsed["지목"]
             )
             self.token_logger.log(
                 agent_id=resident_id,
                 model=self.agents[resident_id]["model"],
-                task_type="final",
+                task_type="final_speech",
                 target=None,
                 round=self.n_rounds + 1,
                 turn=final_turn,
                 usage=usages[resident_id]
             )
+
+            final_opinions[resident_id] = parsed["발화"]
             final_turn += 1
-            logger.info(f"{resident_id} final stance: {opinion['입장']}")
+            logger.info(f"{resident_id} final speech done")
 
         self.logger.save()
         self.token_logger.save()
-
-        # Save agent list (with initial and final opinions)
-        self._save_agent_list(initial_opinions=initial_opinions, final_opinions=final_opinions)
 
         # === 6. Post-debate: Urban planner compromise ===
         logger.info("=== Urban planner synthesizing ===")
@@ -502,14 +505,16 @@ class DebateSimulation:
 
         consensus_text = planner_result["최종합의문"]
 
-        self.logger.log_think(
+        self.logger.log_debate(
             round=self.n_rounds + 2,
             turn=1,
             agent_id="planner",
-            think_type="planner",
-            상대의견=None,
-            반응유형=None,
-            생각=consensus_text
+            model=planner_model,
+            is_vulnerable=False,
+            취약유형="N/A",
+            persona_summary="도시계획가",
+            발화=consensus_text,
+            지목=[]
         )
         self.token_logger.log(
             agent_id="planner",
@@ -576,12 +581,15 @@ class DebateSimulation:
         self.logger.save()
         self.token_logger.save()
 
+        # Save agent list (with initial opinions and vote results)
+        self._save_agent_list(initial_opinions=initial_opinions, vote_results=vote_results)
+
         logger.info(f"Simulation completed. Logs saved.")
 
     def _save_agent_list(
         self,
         initial_opinions: dict = None,
-        final_opinions: dict = None
+        vote_results: dict = None
     ):
         """Save agent list with personas and opinions to CSV (incremental)."""
         output_path = Path(self.output_dir)
@@ -594,7 +602,7 @@ class DebateSimulation:
             "연령대", "성별", "직업", "주거유형", "자가여부", "매수동기",
             "연소득", "거주기간", "가구구성", "재개발지식",
             "개방성", "성실성", "외향성", "친화성", "신경성",
-            "initial_stance", "final_stance"
+            "initial_stance", "vote"
         ]
 
         rows = []
@@ -622,14 +630,14 @@ class DebateSimulation:
                 "친화성": bigfive["친화성"],
                 "신경성": bigfive["신경성"],
                 "initial_stance": "",
-                "final_stance": ""
+                "vote": ""
             }
 
             if initial_opinions and resident_id in initial_opinions:
                 row["initial_stance"] = initial_opinions[resident_id]["입장"]
 
-            if final_opinions and resident_id in final_opinions:
-                row["final_stance"] = final_opinions[resident_id]["입장"]
+            if vote_results and resident_id in vote_results:
+                row["vote"] = vote_results[resident_id]["입장"]
 
             rows.append(row)
 

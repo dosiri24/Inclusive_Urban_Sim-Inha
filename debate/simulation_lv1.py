@@ -23,7 +23,7 @@ from prompts.tasks import (
     get_lv1_narrative_task,
     get_lv1_initial_task,
     get_lv1_speaking_task,
-    get_lv1_final_task,
+    get_lv1_final_speech_task,
     get_lv1_vote_task,
 )
 
@@ -283,31 +283,51 @@ class DebateSimulationLv1:
                 )
             self._append_timeline(f"{round_num}라운드", "\n".join(speech_lines))
 
-        # === Phase 4: Generate final opinions ===
-        logger.info("=== Generating final opinions (batch) ===")
+        # === Phase 4: Final speeches (debate format, batch) ===
+        logger.info("=== Final speeches (batch) ===")
 
-        final_task = get_lv1_final_task()
-        response, _ = self._call_llm(final_task, "final")
-        final_opinions = parse_batch_opinion(response)
+        final_task = get_lv1_final_speech_task()
+        response, _ = self._call_llm(final_task, "final_speech")
+        final_speeches = parse_batch_speech(response)
+        if final_speeches is None:
+            logger.error("Final speech parse failed, using empty list")
+            final_speeches = []
 
-        for rid in resident_ids:
-            opinion = final_opinions.get(rid, {"입장": "무관심", "생각": ""})
-            self.logger.log_think(
+        # Log each final speech as debate entry + build final_opinions for planner
+        final_opinions = {}
+        for turn, speech in enumerate(final_speeches, 1):
+            rid = speech["resident_id"]
+            persona = next((p for p in self.personas if p["resident_id"] == rid), None)
+
+            self.logger.log_debate(
                 round=self.n_rounds + 1,
-                turn=resident_ids.index(rid) + 1,
+                turn=turn,
                 agent_id=rid,
-                think_type="final",
-                상대의견=opinion["입장"],
-                반응유형=None,
-                생각=opinion["생각"]
+                model=self.model_name,
+                is_vulnerable=persona["is_vulnerable"] if persona else False,
+                취약유형=persona.get("취약유형", "N/A") if persona else "N/A",
+                persona_summary=_persona_to_summary(persona) if persona else "",
+                발화=speech["발화"],
+                지목=speech["지목"]
             )
-            logger.info(f"{rid} final stance: {opinion['입장']}")
+
+            final_opinions[rid] = speech["발화"]
+            logger.info(f"{rid} final speech done")
 
         self.logger.save()
         self.token_logger.save()
 
-        # Save agent list with initial and final opinions
-        self._save_agent_list(initial_opinions=initial_opinions, final_opinions=final_opinions)
+        # Append final speeches to timeline
+        final_speech_lines = []
+        for s in final_speeches:
+            지목_str = ", ".join([
+                f"{j['대상']}({j.get('입장', '')})"
+                for j in s.get("지목", [])
+            ])
+            final_speech_lines.append(
+                f"{s['resident_id']}: {s['발화']} (지목: {지목_str or '없음'})"
+            )
+        self._append_timeline("최종발언", "\n".join(final_speech_lines))
 
         # === Phase 5: Urban planner compromise ===
         logger.info("=== Urban planner synthesizing (Lv.1) ===")
@@ -323,14 +343,16 @@ class DebateSimulationLv1:
 
         consensus_text = planner_result["최종합의문"]
 
-        self.logger.log_think(
+        self.logger.log_debate(
             round=self.n_rounds + 2,
             turn=1,
             agent_id="planner",
-            think_type="planner",
-            상대의견=None,
-            반응유형=None,
-            생각=consensus_text
+            model="gemini",
+            is_vulnerable=False,
+            취약유형="N/A",
+            persona_summary="도시계획가",
+            발화=consensus_text,
+            지목=[]
         )
         self.token_logger.log(
             agent_id="planner",
@@ -371,12 +393,15 @@ class DebateSimulationLv1:
         self.logger.save()
         self.token_logger.save()
 
+        # Save agent list with initial opinions and vote results
+        self._save_agent_list(initial_opinions=initial_opinions, vote_results=vote_results)
+
         logger.info("Lv.1 Simulation completed.")
 
     def _save_agent_list(
         self,
         initial_opinions: dict = None,
-        final_opinions: dict = None
+        vote_results: dict = None
     ):
         """Save agent list with personas and opinions to CSV."""
         output_path = Path(self.output_dir)
@@ -389,7 +414,7 @@ class DebateSimulationLv1:
             "연령대", "성별", "직업", "주거유형", "자가여부", "매수동기",
             "연소득", "거주기간", "가구구성", "재개발지식",
             "개방성", "성실성", "외향성", "친화성", "신경성",
-            "initial_stance", "final_stance"
+            "initial_stance", "vote"
         ]
 
         rows = []
@@ -417,14 +442,14 @@ class DebateSimulationLv1:
                 "친화성": bigfive["친화성"],
                 "신경성": bigfive["신경성"],
                 "initial_stance": "",
-                "final_stance": ""
+                "vote": ""
             }
 
             if initial_opinions and resident_id in initial_opinions:
                 row["initial_stance"] = initial_opinions[resident_id]["입장"]
 
-            if final_opinions and resident_id in final_opinions:
-                row["final_stance"] = final_opinions[resident_id]["입장"]
+            if vote_results and resident_id in vote_results:
+                row["vote"] = vote_results[resident_id]["입장"]
 
             rows.append(row)
 

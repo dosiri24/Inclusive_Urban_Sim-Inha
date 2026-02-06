@@ -26,10 +26,10 @@ def compile_debate_text(debate_buffer: list[dict]) -> str:
 
 
 def compile_final_opinions(final_opinions: dict) -> str:
-    """Convert resident_id -> {"입장", "생각"} dict to text."""
+    """Convert resident_id -> speech text dict to text."""
     lines = []
-    for rid, opinion in final_opinions.items():
-        lines.append(f"{rid}: [{opinion['입장']}] {opinion['생각']}")
+    for rid, speech in final_opinions.items():
+        lines.append(f"{rid}: {speech}")
     return "\n".join(lines)
 
 
