@@ -5,7 +5,7 @@ from collections import Counter
 
 logger = logging.getLogger(__name__)
 
-STANCES = ["찬성", "반대", "조건부찬성", "조건부반대"]
+STANCES = ["매우만족", "만족", "불만족", "매우불만족"]
 RESPONSE_TYPES = ["공감", "비판", "질문", "인용"]
 
 

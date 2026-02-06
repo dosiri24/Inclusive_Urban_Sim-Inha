@@ -111,20 +111,20 @@ def parse_think(response: str) -> dict:
 
 def parse_initial_opinion(response: str) -> dict:
     """
-    Parse agent's initial opinion before debate.
+    Parse agent's initial/final opinion.
 
     Expected format:
-        {"입장": "찬성/반대", "생각": "..."}
+        {"입장": "매우불만족/불만족/만족/매우만족", "생각": "..."}
 
     Returns:
         dict with keys: 입장, 생각
     """
     if response is None:
         logger.warning("Response is None")
-        return {"입장": "무관심", "생각": "[응답 없음]"}
+        return {"입장": "무응답", "생각": "[응답 없음]"}
 
     default = {
-        "입장": "무관심",
+        "입장": "무응답",
         "생각": response
     }
 
@@ -133,7 +133,7 @@ def parse_initial_opinion(response: str) -> dict:
         parsed = json.loads(cleaned)
 
         return {
-            "입장": parsed.get("입장", "무관심").replace(" ", ""),
+            "입장": parsed.get("입장", "무응답").replace(" ", ""),
             "생각": parsed.get("생각", response)
         }
 
@@ -187,7 +187,7 @@ def parse_batch_opinion(response: str) -> dict:
     Parse batch opinion response (JSON array).
 
     Expected format:
-        [{"resident_id": "resident_01", "입장": "찬성", "생각": "..."}, ...]
+        [{"resident_id": "resident_01", "입장": "만족", "생각": "..."}, ...]
 
     Returns:
         dict mapping resident_id to {"입장": str, "생각": str}
@@ -206,7 +206,7 @@ def parse_batch_opinion(response: str) -> dict:
 
         return {
             item.get("resident_id"): {
-                "입장": item.get("입장", "무관심").replace(" ", ""),
+                "입장": item.get("입장", "무응답").replace(" ", ""),
                 "생각": item.get("생각", "")
             }
             for item in parsed
@@ -267,3 +267,98 @@ def parse_batch_speech(response: str) -> list | None:
         preview = response[:100] if len(response) > 100 else response
         logger.warning(f"Batch speech parse error: {e}, response: {preview}...")
         return None
+
+
+# =============================================================================
+# Planner & Vote Parsers
+# =============================================================================
+
+
+def parse_planner_result(response: str) -> dict:
+    """
+    Parse planner synthesis response.
+
+    Expected format:
+        {"논쟁요소": [{"주제": str, "쟁점요약": str, "절충안": str}], "최종합의문": str}
+    """
+    if response is None:
+        logger.warning("Response is None")
+        return {"논쟁요소": [], "최종합의문": ""}
+
+    try:
+        cleaned = _strip_markdown(response)
+        parsed = json.loads(cleaned)
+        return {
+            "논쟁요소": parsed.get("논쟁요소", []),
+            "최종합의문": parsed.get("최종합의문", "")
+        }
+
+    except json.JSONDecodeError as e:
+        preview = response[:100] if len(response) > 100 else response
+        logger.warning(f"Planner parse error: {e}, response: {preview}...")
+        return {"논쟁요소": [], "최종합의문": response or ""}
+
+
+def parse_vote(response: str) -> dict:
+    """
+    Parse single resident vote response.
+
+    Expected format:
+        {"입장": "매우불만족/불만족/만족/매우만족", "이유": "..."}
+    """
+    if response is None:
+        logger.warning("Response is None")
+        return {"입장": "무응답", "이유": "[응답 없음]"}
+
+    default = {"입장": "무응답", "이유": response}
+
+    try:
+        cleaned = _strip_markdown(response)
+        parsed = json.loads(cleaned)
+
+        return {
+            "입장": parsed.get("입장", "무응답").replace(" ", ""),
+            "이유": parsed.get("이유", response)
+        }
+
+    except json.JSONDecodeError as e:
+        preview = response[:100] if len(response) > 100 else response
+        logger.warning(f"Vote parse error: {e}, response: {preview}...")
+        return default
+
+
+def parse_batch_vote(response: str) -> dict:
+    """
+    Parse batch vote response for Lv.1.
+
+    Expected format:
+        [{"resident_id": "resident_01", "입장": "만족", "이유": "..."}, ...]
+
+    Returns:
+        dict mapping resident_id to {"입장": str, "이유": str}
+    """
+    if response is None:
+        logger.warning("Response is None")
+        return {}
+
+    try:
+        cleaned = _strip_markdown(response)
+        parsed = json.loads(cleaned)
+
+        if not isinstance(parsed, list):
+            logger.warning("Expected JSON array for batch vote")
+            return {}
+
+        return {
+            item.get("resident_id"): {
+                "입장": item.get("입장", "무응답").replace(" ", ""),
+                "이유": item.get("이유", "")
+            }
+            for item in parsed
+            if item.get("resident_id")
+        }
+
+    except json.JSONDecodeError as e:
+        preview = response[:100] if len(response) > 100 else response
+        logger.warning(f"Batch vote parse error: {e}, response: {preview}...")
+        return {}

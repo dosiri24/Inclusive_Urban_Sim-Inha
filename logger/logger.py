@@ -146,6 +146,12 @@ class DebateLogger:
         if self.think_buffer:
             self._write_csv(think_path, self.think_columns, self.think_buffer)
 
+    def save_consensus(self, result: dict):
+        """Save planner consensus result to JSON file."""
+        path = self.output_dir / f"set{self.set_id}_lv{self.level}_consensus.json"
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(result, f, ensure_ascii=False, indent=2)
+
     def _write_csv(self, path: Path, columns: list, data: list):
         """Write data to CSV file."""
         with open(path, "w", newline="", encoding="utf-8") as f:

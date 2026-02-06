@@ -99,10 +99,17 @@ class GeminiLLM(BaseLLM):
             config=config
         )
 
+        # Extract text parts only, skip thought/thought_signature parts
+        text = "".join(
+            part.text for part in response.candidates[0].content.parts
+            if hasattr(part, "text") and part.text is not None
+            and not getattr(part, "thought", False)
+        )
+
         u = response.usage_metadata
         usage = {
             "cached": getattr(u, 'cached_content_token_count', 0) or 0,
             "prompt": u.prompt_token_count,
             "completion": u.candidates_token_count
         }
-        return response.text, usage
+        return text, usage

@@ -14,12 +14,17 @@ from llm_api import get_llm
 from logger import setup_file_logger, DebateLogger, TokenLogger
 from .config import N_ROUNDS, N_AGENTS, N_VULNERABLE, PROMPTS_DIR, OUTPUT_DIR
 from .persona import generate_all_personas
-from .parser import parse_batch_narrative, parse_batch_opinion, parse_batch_speech
+from .parser import (
+    parse_batch_narrative, parse_batch_opinion, parse_batch_speech,
+    parse_planner_result, parse_batch_vote
+)
+from .planner import compile_debate_text, compile_final_opinions, run_planner
 from prompts.tasks import (
     get_lv1_narrative_task,
     get_lv1_initial_task,
     get_lv1_speaking_task,
     get_lv1_final_task,
+    get_lv1_vote_task,
 )
 
 logger = logging.getLogger("debate.simulation_lv1")
@@ -107,6 +112,9 @@ class DebateSimulationLv1:
         # Setup file logger
         self.log_path = setup_file_logger(output_dir, set_id, self.level)
 
+        # Cumulative conversation timeline (analogous to Lv2 Memory.timeline)
+        self.timeline = ""
+
         logger.info(f"Lv.1 Simulation initialized: set={set_id}, agents={n_agents}, model={model}")
         logger.info(f"Log file: {self.log_path}")
 
@@ -116,7 +124,7 @@ class DebateSimulationLv1:
         return "\n".join(lines)
 
     def _build_context_prompt(self) -> str:
-        """Build full context prompt (system + rules + local)."""
+        """Build full context prompt (system + rules + local + participants)."""
         return f"""[System Context]
 {self.system_guide}
 
@@ -124,13 +132,20 @@ class DebateSimulationLv1:
 {self.debate_rule}
 
 [Local Context]
-{self.local_context}"""
+{self.local_context}
+
+[참여자 목록]
+{self._build_participants_prompt()}"""
+
+    def _append_timeline(self, section: str, content: str):
+        """Append a section to the cumulative timeline."""
+        self.timeline += f"\n\n[{section}]\n{content}"
 
     def _call_llm(self, task: str, task_type: str) -> tuple[str, dict]:
-        """Call LLM with full context + task."""
+        """Call LLM with full context + accumulated timeline + task."""
         prompt_data = {
             "system": self._build_context_prompt(),
-            "timeline": "",
+            "timeline": self.timeline,
             "new_timeline": "",
             "task": task
         }
@@ -157,8 +172,7 @@ class DebateSimulationLv1:
         # === Phase 0-1: Generate narratives ===
         logger.info("=== Generating narratives (batch) ===")
 
-        participants = self._build_participants_prompt()
-        narrative_task = get_lv1_narrative_task(participants)
+        narrative_task = get_lv1_narrative_task()
         response, _ = self._call_llm(narrative_task, "narrative")
         narratives = parse_batch_narrative(response)
 
@@ -178,19 +192,22 @@ class DebateSimulationLv1:
         self.logger.save()
         self.token_logger.save()
 
+        # Append full narratives to timeline
+        narrative_lines = [
+            f"{rid}: {narratives.get(rid, '')}"
+            for rid in resident_ids
+        ]
+        self._append_timeline("서사", "\n".join(narrative_lines))
+
         # === Phase 0-2: Generate initial opinions ===
         logger.info("=== Generating initial opinions (batch) ===")
 
-        narratives_text = "\n".join([
-            f"{rid}: {narratives.get(rid, '')[:100]}..."
-            for rid in resident_ids
-        ])
-        initial_task = get_lv1_initial_task(participants, narratives_text)
+        initial_task = get_lv1_initial_task()
         response, _ = self._call_llm(initial_task, "initial")
         initial_opinions = parse_batch_opinion(response)
 
         for rid in resident_ids:
-            opinion = initial_opinions.get(rid, {"입장": "무관심", "생각": ""})
+            opinion = initial_opinions.get(rid, {"입장": "무응답", "생각": ""})
             self.logger.log_think(
                 round=0,
                 turn=resident_ids.index(rid) + 1,
@@ -208,33 +225,19 @@ class DebateSimulationLv1:
         # Save agent list with initial opinions
         self._save_agent_list(initial_opinions=initial_opinions)
 
-        # === Phase 1-N: Debate rounds ===
-        all_speeches = []
-        initial_opinions_text = "\n".join([
-            f"{rid}: {initial_opinions.get(rid, {}).get('입장', '무관심')} - {initial_opinions.get(rid, {}).get('생각', '')[:50]}..."
+        # Append full initial opinions to timeline
+        opinion_lines = [
+            f"{rid}: [{initial_opinions.get(rid, {}).get('입장', '무응답')}] "
+            f"{initial_opinions.get(rid, {}).get('생각', '')}"
             for rid in resident_ids
-        ])
+        ]
+        self._append_timeline("초기입장", "\n".join(opinion_lines))
 
+        # === Phase 1-N: Debate rounds ===
         for round_num in range(1, self.n_rounds + 1):
             logger.info(f"=== Round {round_num} (batch) ===")
 
-            # Build previous speeches text
-            previous_speeches = ""
-            if all_speeches:
-                prev_lines = []
-                for r, speeches in enumerate(all_speeches, 1):
-                    prev_lines.append(f"[라운드 {r}]")
-                    for s in speeches:
-                        지목_str = ", ".join([f"{j['대상']}({j.get('입장', '')})" for j in s.get("지목", [])])
-                        prev_lines.append(f"{s['resident_id']}: {s['발화'][:80]}... (지목: {지목_str or '없음'})")
-                previous_speeches = "\n".join(prev_lines)
-
-            speaking_task = get_lv1_speaking_task(
-                round_num=round_num,
-                participants=participants,
-                initial_opinions=initial_opinions_text,
-                previous_speeches=previous_speeches
-            )
+            speaking_task = get_lv1_speaking_task(round_num)
             max_retries = 3
             speeches = None
             for attempt in range(1, max_retries + 1):
@@ -265,25 +268,25 @@ class DebateSimulationLv1:
                 )
                 logger.debug(f"{rid} spoke: {speech['발화'][:50]}...")
 
-            all_speeches.append(speeches)
             self.logger.save()
             self.token_logger.save()
+
+            # Append full round speeches to timeline
+            speech_lines = []
+            for s in speeches:
+                지목_str = ", ".join([
+                    f"{j['대상']}({j.get('입장', '')})"
+                    for j in s.get("지목", [])
+                ])
+                speech_lines.append(
+                    f"{s['resident_id']}: {s['발화']} (지목: {지목_str or '없음'})"
+                )
+            self._append_timeline(f"{round_num}라운드", "\n".join(speech_lines))
 
         # === Phase 4: Generate final opinions ===
         logger.info("=== Generating final opinions (batch) ===")
 
-        all_speeches_text = ""
-        for r, speeches in enumerate(all_speeches, 1):
-            all_speeches_text += f"\n[라운드 {r}]\n"
-            for s in speeches:
-                지목_str = ", ".join([f"{j['대상']}({j.get('입장', '')})" for j in s.get("지목", [])])
-                all_speeches_text += f"{s['resident_id']}: {s['발화']} (지목: {지목_str or '없음'})\n"
-
-        final_task = get_lv1_final_task(
-            participants=participants,
-            initial_opinions=initial_opinions_text,
-            all_speeches=all_speeches_text
-        )
+        final_task = get_lv1_final_task()
         response, _ = self._call_llm(final_task, "final")
         final_opinions = parse_batch_opinion(response)
 
@@ -305,6 +308,68 @@ class DebateSimulationLv1:
 
         # Save agent list with initial and final opinions
         self._save_agent_list(initial_opinions=initial_opinions, final_opinions=final_opinions)
+
+        # === Phase 5: Urban planner compromise ===
+        logger.info("=== Urban planner synthesizing (Lv.1) ===")
+
+        planner_guide = _load_prompt_file(self.prompts_dir / "planner_guide.md")
+        debate_text = compile_debate_text(self.logger.debate_buffer)
+        opinions_text = compile_final_opinions(final_opinions)
+
+        planner_result, planner_usage = run_planner(
+            "gemini", planner_guide, debate_text, opinions_text,
+            debate_rule=self.debate_rule, local_context=self.local_context,
+        )
+
+        consensus_text = planner_result["최종합의문"]
+
+        self.logger.log_think(
+            round=self.n_rounds + 2,
+            turn=1,
+            agent_id="planner",
+            think_type="planner",
+            상대의견=None,
+            반응유형=None,
+            생각=consensus_text
+        )
+        self.token_logger.log(
+            agent_id="planner",
+            model="gemini",
+            task_type="synthesize",
+            target=None,
+            round=self.n_rounds + 2,
+            turn=1,
+            usage=planner_usage
+        )
+        self.logger.save_consensus(planner_result)
+        self.logger.save()
+        self.token_logger.save()
+
+        # Append consensus to timeline for resident vote
+        self._append_timeline("도시계획가 합의문", consensus_text)
+
+        # === Phase 6: Resident vote on compromise (batch) ===
+        logger.info("=== Resident voting on compromise (Lv.1 batch) ===")
+
+        vote_task = get_lv1_vote_task()
+        response, vote_usage = self._call_llm(vote_task, "vote")
+        vote_results = parse_batch_vote(response)
+
+        for rid in resident_ids:
+            vote = vote_results.get(rid, {"입장": "무응답", "이유": ""})
+            self.logger.log_think(
+                round=self.n_rounds + 2,
+                turn=resident_ids.index(rid) + 2,
+                agent_id=rid,
+                think_type="vote",
+                상대의견=vote["입장"],
+                반응유형=None,
+                생각=vote["이유"]
+            )
+            logger.info(f"{rid} vote: {vote['입장']}")
+
+        self.logger.save()
+        self.token_logger.save()
 
         logger.info("Lv.1 Simulation completed.")
 

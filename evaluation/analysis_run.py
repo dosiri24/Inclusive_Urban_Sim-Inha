@@ -28,7 +28,7 @@ def load_agents_full(directory: str, prefix: str = "") -> list[dict]:
     with open(path, encoding="utf-8") as f:
         reader = csv.DictReader(f)
         for row in reader:
-            # Normalize stance spaces from LLM output (e.g. "조건부 반대" -> "조건부반대")
+            # Normalize stance spaces from LLM output (e.g. "매우 만족" -> "매우만족")
             for key in ("initial_stance", "final_stance"):
                 if key in row and row[key]:
                     row[key] = row[key].replace(" ", "")

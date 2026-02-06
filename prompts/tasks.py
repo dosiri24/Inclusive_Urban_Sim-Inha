@@ -5,7 +5,7 @@
 
 # Generate narrative background task.
 def get_narrative_task() -> str:
-    return """당신은 주안2 미추5구역에 사는 주민입니다. 주어진 페르소나를 바탕으로 다음 질문에 대해 자연스럽게 이야기하세요.
+    return """당신은 주안2 미추5구역에 사는 주민입니다. 주어진 페르소나를 바탕으로 자신 스스로 생각하는 형태로 이야기하세요.
 
 1. 이 동네에 어떻게 오게 되었나요?
 2. 재개발에 대해 어디서, 누구에게, 어떻게 들었나요?
@@ -22,23 +22,28 @@ def get_narrative_task() -> str:
 
 # Generate initial opinion task (MODE 4).
 def get_initial_task() -> str:
-    return """토론이 시작되기 전입니다. 아직 다른 주민의 의견을 듣지 않은 상태에서, 당신의 페르소나와 상황을 바탕으로 미추5구역 촉진계획 세부안에 대한 당신의 입장과 조건, 우려 등을 이야기해주세요.
+    return """토의이 시작되기 전입니다. 아직 다른 주민의 의견을 듣지 않은 상태에서, 당신의 페르소나와 상황을 바탕으로 미추5구역 촉진계획 세부안에 대한 만족도와 그 이유를 이야기해주세요.
 
 응답 형식:
-{"입장": "찬성/조건부찬성/조건부반대/반대 중 택1", "생각": "당신의 이유와 생각"}"""
+{"입장": "매우불만족/불만족/만족/매우만족 중 택1", "생각": "당신의 이유와 생각"}"""
 
 
 # Generate speaking turn task (MODE 1).
 def get_speaking_task(round_num: int) -> str:
     return f"""현재 {round_num}라운드입니다. 당신의 발화 차례입니다.
+토의 방식에 따라 발언해주세요.
 
 응답 형식:
 {{"발화": "당신의 의견", "지목": [{{"대상": "resident_XX", "입장": "공감/비판/인용/질문"}}] 또는 []}}
 
 지목 규칙:
 - 특정 주민의 의견을 언급할 때 해당 주민을 지목
-- 자신의 답변에서 여러 주민을 언급하면 여러 번 지목 가능 (예: [{{"대상": "resident_01", "입장": "공감"}}, {{"대상": "resident_05", "입장": "비판"}}])
-- 반드시 여러 명을 지목할 필요는 없음. 지목 없이 일반적인 의견만 말해도 됨 (지목: [])"""
+- 공감: 상대 의견에 동의할 때
+- 비판: 상대 의견에 반대하거나 문제점을 지적할 때
+- 인용: 상대 의견을 참고하여 자기 주장을 할 때
+- 질문: 상대 말이 이해가 안 되거나 궁금한 점이 있을 때
+- 자신의 솔직한 반응에 맞는 유형을 선택하세요.
+- 여러 주민 언급 시 여러 번 지목 가능. 지목 없이 의견만 말해도 됨 (지목: [])"""
 
 
 # Generate thinking reaction task (MODE 2).
@@ -52,7 +57,15 @@ def get_think_task(listener_id: str, speaker_id: str, response_code: str, speech
 상대방이 왜 그렇게 말했는지, 그리고 당신({listener_id})은 어떻게 생각하는지 정리하세요.
 
 응답 형식:
-{{"상대의견": "{response_code}", "반응유형": "공감/비판/인용/질문/무시 중 택1", "생각": "당신의 생각"}}"""
+{{"상대의견": "{response_code}", "반응유형": "공감/비판/인용/질문/무시 중 택1", "생각": "당신의 생각"}}
+
+반응유형 기준:
+- 공감: 상대 의견에 동의할 때
+- 비판: 상대 의견에 반대하거나 문제점을 지적할 때
+- 인용: 상대 의견을 참고하여 자기 주장을 할 때
+- 질문: 상대 말이 이해가 안 되거나 궁금한 점이 있을 때
+- 무시: 관심 없거나 반응할 필요가 없다고 느낄 때
+- 자신의 솔직한 반응에 맞는 유형을 선택하세요."""
 
 
 # Generate round reflection task (MODE 3).
@@ -67,10 +80,10 @@ def get_reflection_task(resident_id: str, round_num: int) -> str:
 
 # Generate final opinion task (MODE 4).
 def get_final_task() -> str:
-    return """토론이 모두 끝났습니다. 다른 주민들의 의견을 모두 들은 지금, 미추5구역 촉진계획 세부안에 대한 당신의 최종 입장은 어떻습니까?
+    return """토의이 모두 끝났습니다. 다른 주민들의 의견을 모두 들은 지금, 미추5구역 촉진계획 세부안에 대한 당신의 최종 만족도는 어떻습니까?
 
 응답 형식:
-{"입장": "찬성/조건부찬성/조건부반대/반대 중 택1", "생각": "당신의 최종 생각과 이유, 조건 등"}"""
+{"입장": "매우불만족/불만족/만족/매우만족 중 택1", "생각": "당신의 최종 생각과 이유, 조건 등"}"""
 
 
 # =============================================================================
@@ -78,13 +91,10 @@ def get_final_task() -> str:
 # =============================================================================
 
 
-def get_lv1_narrative_task(participants: str) -> str:
+def get_lv1_narrative_task() -> str:
     """Generate batch narrative task for all participants at once."""
-    return f"""당신은 주안2동 미추5구역 재개발 토론 시뮬레이션을 진행하는 역할입니다.
-아래 참여자 목록의 각 주민 입장에서, 그 페르소나에 맞게 다음 질문에 답하세요.
-
-[참여자 목록]
-{participants}
+    return """주안2동 미추5구역 주민들이 모여 재개발 계획안에 대해 이야기를 나눕니다.
+참여자 목록의 각 주민 입장에서, 그 페르소나에 맞게 다음 질문에 답하세요.
 
 [질문]
 1. 이 동네에 어떻게 오게 되었나요?
@@ -98,60 +108,36 @@ def get_lv1_narrative_task(participants: str) -> str:
 
 응답 형식 (JSON 배열):
 [
-  {{"resident_id": "resident_01", "서사": "..."}},
-  {{"resident_id": "resident_02", "서사": "..."}},
+  {"resident_id": "resident_01", "서사": "..."},
+  {"resident_id": "resident_02", "서사": "..."},
   ...
 ]"""
 
 
-def get_lv1_initial_task(participants: str, narratives: str) -> str:
+def get_lv1_initial_task() -> str:
     """Generate batch initial opinion task."""
-    return f"""토론이 시작되기 전입니다. 각 주민의 페르소나와 서사를 바탕으로,
+    return """토의이 시작되기 전입니다. 각 주민의 페르소나와 서사를 바탕으로,
 미추5구역 촉진계획 세부안에 대한 초기 입장을 작성하세요.
 
-[참여자 목록]
-{participants}
-
-[각 주민의 서사]
-{narratives}
-
 각 주민은 아직 다른 주민의 의견을 듣지 않은 상태입니다.
-페르소나에 맞게 찬성/조건부찬성/조건부반대/반대 중 하나를 선택하고 이유를 작성하세요.
+페르소나에 맞게 촉진계획 세부안에 대한 만족도를 선택하고 이유를 작성하세요.
 
 응답 형식 (JSON 배열):
 [
-  {{"resident_id": "resident_01", "입장": "찬성/조건부찬성/조건부반대/반대 중 택1", "생각": "..."}},
-  {{"resident_id": "resident_02", "입장": "...", "생각": "..."}},
+  {"resident_id": "resident_01", "입장": "매우불만족/불만족/만족/매우만족 중 택1", "생각": "..."},
+  {"resident_id": "resident_02", "입장": "...", "생각": "..."},
   ...
 ]"""
 
 
-def get_lv1_speaking_task(
-    round_num: int,
-    participants: str,
-    initial_opinions: str,
-    previous_speeches: str = ""
-) -> str:
+def get_lv1_speaking_task(round_num: int) -> str:
     """Generate batch speaking task for one round."""
-    prev_section = ""
-    if previous_speeches:
-        prev_section = f"""
-[이전 라운드 발화]
-{previous_speeches}
-"""
-
     return f"""{round_num}라운드입니다. 각 주민이 순서대로 발언합니다.
 
-[참여자 목록]
-{participants}
-
-[초기 입장]
-{initial_opinions}
-{prev_section}
 [라운드 {round_num} 지침]
 - 1라운드: 간단한 자기소개 후 계획안에 대한 첫 의견
 - 2라운드: 다른 주민 발언에 대한 반응, 질문, 동의/반대
-- 3라운드: 토론을 통해 바뀐 생각이나 유지되는 입장 정리
+- 3라운드: 토의을 통해 바뀐 생각이나 유지되는 입장 정리
 
 각 주민은 자신의 페르소나와 초기 입장을 바탕으로 발언하세요.
 다른 주민의 의견을 언급할 경우 지목(공감/비판/인용/질문)하세요.
@@ -164,29 +150,56 @@ def get_lv1_speaking_task(
 ]"""
 
 
-def get_lv1_final_task(
-    participants: str,
-    initial_opinions: str,
-    all_speeches: str
-) -> str:
+def get_lv1_final_task() -> str:
     """Generate batch final opinion task."""
-    return f"""토론이 모두 끝났습니다. 각 주민의 최종 입장을 작성하세요.
+    return """토의이 모두 끝났습니다. 각 주민의 최종 입장을 작성하세요.
 
-[참여자 목록]
-{participants}
-
-[초기 입장]
-{initial_opinions}
-
-[토론 내용]
-{all_speeches}
-
-각 주민은 토론을 통해 들은 의견을 바탕으로 최종 입장을 정하세요.
+각 주민은 토의을 통해 들은 의견을 바탕으로 최종 입장을 정하세요.
 처음과 달라졌다면 무엇 때문인지 포함하세요.
 
 응답 형식 (JSON 배열):
 [
-  {{"resident_id": "resident_01", "입장": "찬성/조건부찬성/조건부반대/반대 중 택1", "생각": "..."}},
-  {{"resident_id": "resident_02", "입장": "...", "생각": "..."}},
+  {"resident_id": "resident_01", "입장": "매우불만족/불만족/만족/매우만족 중 택1", "생각": "..."},
+  {"resident_id": "resident_02", "입장": "...", "생각": "..."},
+  ...
+]"""
+
+
+# =============================================================================
+# Planner & Vote Tasks
+# =============================================================================
+
+
+def get_planner_task() -> str:
+    """Generate urban planner synthesis task."""
+    return """주민 토의 전문과 최종 의견을 분석하여 다음을 수행하세요:
+
+1. 토의에서 나타난 논쟁요소를 주제별로 카테고리화하세요.
+2. 각 논쟁요소에 대해 양측의 쟁점을 요약하세요.
+3. 각 논쟁요소에 대해 실현 가능한 절충안을 제시하세요.
+4. 모든 절충안을 통합한 최종합의문을 작성하세요.
+
+응답 형식:
+{"논쟁요소": [{"주제": "주제명", "쟁점요약": "각 측 주장 요약", "절충안": "구체적 절충 제안"}], "최종합의문": "전체 합의 문서"}"""
+
+
+def get_vote_task() -> str:
+    """Generate resident vote task for Lv.2~4."""
+    return """도시계획가가 토의 내용을 분석하여 절충안을 제시했습니다.
+대화기록에 추가된 도시계획가의 최종합의문을 읽고, 절충안에 대한 만족도를 평가해주세요.
+
+응답 형식:
+{"입장": "매우불만족/불만족/만족/매우만족 중 택1", "이유": "만족도 평가 이유"}"""
+
+
+def get_lv1_vote_task() -> str:
+    """Generate batch vote task for Lv.1."""
+    return """도시계획가가 토의 내용을 분석하여 절충안을 제시했습니다.
+위의 도시계획가 합의문을 읽고, 각 주민의 입장에서 절충안에 대한 만족도를 평가하세요.
+
+응답 형식 (JSON 배열):
+[
+  {"resident_id": "resident_01", "입장": "매우불만족/불만족/만족/매우만족 중 택1", "이유": "..."},
+  {"resident_id": "resident_02", "입장": "...", "이유": "..."},
   ...
 ]"""

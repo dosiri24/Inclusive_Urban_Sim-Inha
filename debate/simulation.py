@@ -16,10 +16,11 @@ from llm_api import LLM_MAP, get_enabled_models
 from logger import setup_file_logger, DebateLogger, TokenLogger
 from .config import N_ROUNDS, N_AGENTS, N_VULNERABLE, PROMPTS_DIR, OUTPUT_DIR
 from .persona import generate_all_personas
-from .parser import parse_response, parse_think, parse_initial_opinion
+from .parser import parse_response, parse_think, parse_initial_opinion, parse_vote
+from .planner import compile_debate_text, compile_final_opinions, run_planner
 from prompts.tasks import (
     get_narrative_task, get_initial_task, get_speaking_task,
-    get_think_task, get_reflection_task, get_final_task
+    get_think_task, get_reflection_task, get_final_task, get_vote_task
 )
 
 logger = logging.getLogger("debate.simulation")
@@ -481,6 +482,99 @@ class DebateSimulation:
 
         # Save agent list (with initial and final opinions)
         self._save_agent_list(initial_opinions=initial_opinions, final_opinions=final_opinions)
+
+        # === 6. Post-debate: Urban planner compromise ===
+        logger.info("=== Urban planner synthesizing ===")
+
+        debate_text = compile_debate_text(self.logger.debate_buffer)
+        opinions_text = compile_final_opinions(final_opinions)
+        planner_guide = _load_prompt_file(self.prompts_dir / "planner_guide.md")
+
+        if self.level <= 2:
+            planner_model = "gemini"
+        else:
+            planner_model = random.choice(get_enabled_models())
+
+        planner_result, planner_usage = run_planner(
+            planner_model, planner_guide, debate_text, opinions_text,
+            debate_rule=self.debate_rule, local_context=self.local_context,
+        )
+
+        consensus_text = planner_result["최종합의문"]
+
+        self.logger.log_think(
+            round=self.n_rounds + 2,
+            turn=1,
+            agent_id="planner",
+            think_type="planner",
+            상대의견=None,
+            반응유형=None,
+            생각=consensus_text
+        )
+        self.token_logger.log(
+            agent_id="planner",
+            model=planner_model,
+            task_type="synthesize",
+            target=None,
+            round=self.n_rounds + 2,
+            turn=1,
+            usage=planner_usage
+        )
+        self.logger.save_consensus(planner_result)
+        self.logger.save()
+        self.token_logger.save()
+
+        # === 7. Post-debate: Resident vote on compromise (parallel) ===
+        logger.info("=== Resident voting on compromise ===")
+
+        # Add consensus to each agent's memory
+        for resident_id in resident_ids:
+            self.agents[resident_id]["agent"].memory.add_utterance(
+                "planner", consensus_text
+            )
+
+        vote_task = get_vote_task()
+
+        def cast_vote(resident_id):
+            agent = self.agents[resident_id]["agent"]
+            response, usage = agent.respond(vote_task)
+            return resident_id, parse_vote(response), usage
+
+        with ThreadPoolExecutor(max_workers=len(resident_ids)) as executor:
+            futures = {executor.submit(cast_vote, aid): aid for aid in resident_ids}
+            vote_results = {}
+            vote_usages = {}
+            for future in as_completed(futures):
+                resident_id, parsed, usage = future.result()
+                vote_results[resident_id] = parsed
+                vote_usages[resident_id] = usage
+
+        vote_turn = 1
+        for resident_id in resident_ids:
+            vote = vote_results[resident_id]
+            self.logger.log_think(
+                round=self.n_rounds + 2,
+                turn=vote_turn + 1,
+                agent_id=resident_id,
+                think_type="vote",
+                상대의견=vote["입장"],
+                반응유형=None,
+                생각=vote["이유"]
+            )
+            self.token_logger.log(
+                agent_id=resident_id,
+                model=self.agents[resident_id]["model"],
+                task_type="vote",
+                target=None,
+                round=self.n_rounds + 2,
+                turn=vote_turn + 1,
+                usage=vote_usages[resident_id]
+            )
+            vote_turn += 1
+            logger.info(f"{resident_id} vote: {vote['입장']}")
+
+        self.logger.save()
+        self.token_logger.save()
 
         logger.info(f"Simulation completed. Logs saved.")
 

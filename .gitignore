@@ -8,3 +8,4 @@ test_*.py
 outputs/
 datas/
 PLAN_issue_structure.md
+ISSUES.md
