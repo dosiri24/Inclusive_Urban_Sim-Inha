@@ -45,7 +45,7 @@ def parse_response(response: str) -> dict:
 
     try:
         cleaned = _strip_markdown(response)
-        parsed = json.loads(cleaned)
+        parsed = json.loads(cleaned, strict=False)
 
         지목_raw = parsed.get("지목", [])
 
@@ -95,7 +95,7 @@ def parse_think(response: str) -> dict:
 
     try:
         cleaned = _strip_markdown(response)
-        parsed = json.loads(cleaned)
+        parsed = json.loads(cleaned, strict=False)
 
         return {
             "상대의견": parsed.get("상대의견", None),
@@ -130,7 +130,7 @@ def parse_initial_opinion(response: str) -> dict:
 
     try:
         cleaned = _strip_markdown(response)
-        parsed = json.loads(cleaned)
+        parsed = json.loads(cleaned, strict=False)
 
         return {
             "입장": parsed.get("입장", "무응답").replace(" ", ""),
@@ -164,7 +164,7 @@ def parse_batch_narrative(response: str) -> dict:
 
     try:
         cleaned = _strip_markdown(response)
-        parsed = json.loads(cleaned)
+        parsed = json.loads(cleaned, strict=False)
 
         if not isinstance(parsed, list):
             logger.warning("Expected JSON array for batch narrative")
@@ -198,7 +198,7 @@ def parse_batch_opinion(response: str) -> dict:
 
     try:
         cleaned = _strip_markdown(response)
-        parsed = json.loads(cleaned)
+        parsed = json.loads(cleaned, strict=False)
 
         if not isinstance(parsed, list):
             logger.warning("Expected JSON array for batch opinion")
@@ -227,7 +227,7 @@ def parse_batch_speech(response: str) -> list | None:
 
     try:
         cleaned = _strip_markdown(response)
-        parsed = json.loads(cleaned)
+        parsed = json.loads(cleaned, strict=False)
 
         if not isinstance(parsed, list):
             logger.warning("Expected JSON array for batch speech")
@@ -287,7 +287,7 @@ def parse_planner_result(response: str) -> dict:
 
     try:
         cleaned = _strip_markdown(response)
-        parsed = json.loads(cleaned)
+        parsed = json.loads(cleaned, strict=False)
         return {
             "논쟁요소": parsed.get("논쟁요소", []),
             "최종합의문": parsed.get("최종합의문", "")
@@ -314,7 +314,7 @@ def parse_vote(response: str) -> dict:
 
     try:
         cleaned = _strip_markdown(response)
-        parsed = json.loads(cleaned)
+        parsed = json.loads(cleaned, strict=False)
 
         return {
             "입장": parsed.get("입장", "무응답").replace(" ", ""),
@@ -343,7 +343,7 @@ def parse_batch_vote(response: str) -> dict:
 
     try:
         cleaned = _strip_markdown(response)
-        parsed = json.loads(cleaned)
+        parsed = json.loads(cleaned, strict=False)
 
         if not isinstance(parsed, list):
             logger.warning("Expected JSON array for batch vote")

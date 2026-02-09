@@ -3,6 +3,7 @@
 from .gemini import GeminiLLM
 from .chatgpt import ChatGPTLLM
 from .claude import ClaudeLLM
+from .claudecode import ClaudeCodeLLM
 from .kimi import KimiLLM
 from .exaone import ExaoneLLM
 from .grok import GrokLLM
@@ -12,6 +13,7 @@ LLM_MAP = {
     "gemini": GeminiLLM,
     "chatgpt": ChatGPTLLM,
     "claude": ClaudeLLM,
+    "claudecode": ClaudeCodeLLM,
     "kimi": KimiLLM,
     "exaone": ExaoneLLM,
     "grok": GrokLLM,
@@ -21,6 +23,7 @@ PROVIDER_MAP = {
     "gemini": "google",
     "chatgpt": "openai",
     "claude": "anthropic",
+    "claudecode": "claudecode",
     "kimi": "moonshot",
     "exaone": "exaone",
     "grok": "xai",

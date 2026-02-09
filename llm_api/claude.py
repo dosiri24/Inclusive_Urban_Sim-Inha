@@ -4,7 +4,7 @@ import os
 import logging
 import threading
 import time
-from .base import BaseLLM, is_enabled
+from .base import BaseLLM, is_enabled, LLM_TIMEOUT
 
 MODEL_NAME = "claude-haiku-4-5-20251001"
 MIN_REQUEST_INTERVAL = 1.5  # seconds between requests (all instances share)
@@ -43,10 +43,12 @@ class ClaudeLLM(BaseLLM):
         """Claude-specific retry with longer waits for rate limits."""
         for attempt in range(max_retries):
             try:
-                result, usage = self.chat(prompt_data)
+                result, usage = self._call_with_timeout(prompt_data, LLM_TIMEOUT)
                 if result is not None:
                     return result, usage
                 logger.warning(f"Empty response, retry {attempt+1}/{max_retries}")
+            except TimeoutError:
+                logger.warning(f"Timeout ({LLM_TIMEOUT}s), retry {attempt+1}/{max_retries}")
             except Exception as e:
                 logger.warning(f"API error: {e}, retry {attempt+1}/{max_retries}")
             if attempt < max_retries - 1:
