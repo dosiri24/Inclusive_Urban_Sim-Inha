@@ -54,6 +54,13 @@ def build_prompt(memory: Memory) -> dict:
     else:
         timeline_content = "[Timeline]\n(empty)"
 
+    # === cached timeline (items before last cache refresh) ===
+    cached_lines = _format_timeline_items(m["cached_timeline"])
+    if cached_lines:
+        cached_timeline_content = "[Timeline]\n" + "\n".join(cached_lines)
+    else:
+        cached_timeline_content = ""
+
     # === new timeline (items after last cache) ===
     new_lines = _format_timeline_items(m["new_timeline"])
     if new_lines:
@@ -70,6 +77,7 @@ def build_prompt(memory: Memory) -> dict:
     return {
         "system": system_content,
         "timeline": timeline_content,
+        "cached_timeline": cached_timeline_content,
         "new_timeline": new_timeline_content,
         "task": task_content
     }

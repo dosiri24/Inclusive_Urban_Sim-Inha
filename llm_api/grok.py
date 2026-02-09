@@ -1,6 +1,7 @@
 """xAI Grok LLM (OpenAI compatible)"""
 
 import os
+import uuid
 from .base import BaseLLM, is_enabled
 
 MODEL_NAME = "grok-4-1-fast-reasoning"
@@ -21,6 +22,7 @@ class GrokLLM(BaseLLM):
 
         from openai import OpenAI
         self.client = OpenAI(api_key=api_key, base_url=BASE_URL)
+        self.conv_id = str(uuid.uuid4())
 
     def chat(self, prompt_data: dict) -> tuple[str, dict]:
         messages = [
@@ -30,7 +32,8 @@ class GrokLLM(BaseLLM):
 
         response = self.client.chat.completions.create(
             model=MODEL_NAME,
-            messages=messages
+            messages=messages,
+            extra_headers={"x-grok-conv-id": self.conv_id}
         )
 
         u = response.usage

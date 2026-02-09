@@ -1,4 +1,4 @@
-"""Agent with cache support for Gemini."""
+"""Agent with cache support."""
 
 from .memory import Memory
 from .prompt_builder import build_prompt
@@ -29,7 +29,7 @@ class Agent:
     def refresh_cache(self) -> bool:
         """
         Refresh LLM cache with current memory content.
-        Only works for Gemini model.
+        Works for Gemini (explicit cache) and Claude (prefix caching).
 
         Returns:
             True if cache was refreshed, False otherwise.

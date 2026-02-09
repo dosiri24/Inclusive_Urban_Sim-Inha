@@ -429,8 +429,9 @@ class DebateSimulation:
             self.logger.save()
             self.token_logger.save()
 
-            # Refresh cache after each round
-            self._refresh_all_caches()
+            # Refresh cache only when next round exists
+            if round_num < self.n_rounds:
+                self._refresh_all_caches()
 
         # === 5. Post-debate: Final speech (debate format, parallel) ===
         logger.info("=== Final speeches ===")
