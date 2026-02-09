@@ -29,7 +29,7 @@ class ClaudeLLM(BaseLLM):
                 {
                     "type": "text",
                     "text": prompt_data["system"],
-                    "cache_control": {"type": "ephemeral", "ttl": "5m"}
+                    "cache_control": {"type": "ephemeral"}
                 }
             ],
             messages=[
@@ -39,7 +39,7 @@ class ClaudeLLM(BaseLLM):
                         {
                             "type": "text",
                             "text": prompt_data["timeline"],
-                            "cache_control": {"type": "ephemeral", "ttl": "5m"}
+                            "cache_control": {"type": "ephemeral"}
                         },
                         {
                             "type": "text",
@@ -51,9 +51,11 @@ class ClaudeLLM(BaseLLM):
         )
 
         u = response.usage
+        cache_create = getattr(u, 'cache_creation_input_tokens', 0) or 0
+        cache_read = getattr(u, 'cache_read_input_tokens', 0) or 0
         usage = {
-            "cached": u.cache_read_input_tokens,
-            "prompt": u.input_tokens,
+            "cached": cache_read,
+            "prompt": u.input_tokens + cache_create + cache_read,
             "completion": u.output_tokens
         }
         return response.content[0].text, usage

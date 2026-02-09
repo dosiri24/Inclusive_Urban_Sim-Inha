@@ -5,6 +5,7 @@ from .chatgpt import ChatGPTLLM
 from .claude import ClaudeLLM
 from .kimi import KimiLLM
 from .exaone import ExaoneLLM
+from .grok import GrokLLM
 from .base import is_enabled
 
 LLM_MAP = {
@@ -13,6 +14,7 @@ LLM_MAP = {
     "claude": ClaudeLLM,
     "kimi": KimiLLM,
     "exaone": ExaoneLLM,
+    "grok": GrokLLM,
 }
 
 PROVIDER_MAP = {
@@ -21,6 +23,7 @@ PROVIDER_MAP = {
     "claude": "anthropic",
     "kimi": "moonshot",
     "exaone": "exaone",
+    "grok": "xai",
 }
 
 
