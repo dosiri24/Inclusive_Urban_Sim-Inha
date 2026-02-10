@@ -357,6 +357,8 @@ class DebateSimulation:
                 # Process results in order
                 for other_id in other_ids:
                     think_parsed = results[other_id]
+                    if think_parsed["상대의견"] and len(think_parsed["상대의견"]) > 30:
+                        think_parsed["상대의견"] = response_code
                     self.agents[other_id]["agent"].memory.add_my_think(think_parsed["생각"])
                     self.logger.log_think(
                         round=round_num,
