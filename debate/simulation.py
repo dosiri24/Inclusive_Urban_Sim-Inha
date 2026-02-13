@@ -20,7 +20,8 @@ from .parser import parse_response, parse_think, parse_initial_opinion, parse_vo
 from .planner import compile_debate_text, compile_final_opinions, run_planner
 from prompts.tasks import (
     get_narrative_task, get_initial_task, get_speaking_task,
-    get_think_task, get_reflection_task, get_final_speech_task, get_vote_task
+    get_think_task, get_reflection_task, get_final_speech_task, get_vote_task,
+    get_moderator_opening_task, get_moderator_think_task, get_moderator_roundend_task
 )
 
 logger = logging.getLogger("debate.simulation")
@@ -86,7 +87,8 @@ class DebateSimulation:
         n_vulnerable: int = N_VULNERABLE,
         prompts_dir: str = PROMPTS_DIR,
         output_dir: str = OUTPUT_DIR,
-        model: str = None
+        model: str = None,
+        moderator: bool = False
     ):
         """
         Initialize debate simulation.
@@ -100,6 +102,7 @@ class DebateSimulation:
             prompts_dir: Directory containing prompt files
             output_dir: Directory for output CSV files
             model: If specified, all agents use this model (for testing)
+            moderator: If True, add a facilitator agent (Lv.4)
         """
         self.fixed_model = model
         self.set_id = set_id
@@ -107,6 +110,7 @@ class DebateSimulation:
         self.n_rounds = n_rounds
         self.output_dir = output_dir
         self.prompts_dir = Path(prompts_dir)
+        self.use_moderator = moderator
 
         # Load static prompts
         self.system_guide = _load_prompt_file(self.prompts_dir / "system_guide.md")
@@ -154,6 +158,29 @@ class DebateSimulation:
                 "agent": Agent(resident_id, model_name, memory),
                 "persona": persona,
                 "model": model_name
+            }
+
+        # Create moderator agent if enabled
+        self.moderator = None
+        if self.use_moderator:
+            moderator_guide = _load_prompt_file(self.prompts_dir / "moderator_guide.md")
+
+            if isinstance(self.fixed_model, list):
+                moderator_model = random.choice(self.fixed_model)
+            elif self.fixed_model:
+                moderator_model = self.fixed_model
+            else:
+                moderator_model = random.choice(get_enabled_models())
+
+            moderator_memory = Memory(
+                system_context=moderator_guide,
+                debate_rule=self.debate_rule,
+                local_context=self.local_context,
+                persona=""
+            )
+            self.moderator = {
+                "agent": Agent("moderator", moderator_model, moderator_memory),
+                "model": moderator_model
             }
 
         # Initialize loggers
@@ -286,6 +313,34 @@ class DebateSimulation:
         # Save agent list (with initial opinions)
         self._save_agent_list(initial_opinions=initial_opinions)
 
+        # === 0-3. Moderator opening speech ===
+        if self.use_moderator:
+            logger.info("=== Moderator opening speech ===")
+            opening_task = get_moderator_opening_task()
+            mod_response, mod_usage = self.moderator["agent"].respond(opening_task)
+            mod_parsed = parse_response(mod_response)
+
+            self.logger.log_debate(
+                round=0, turn=1, agent_id="moderator",
+                model=self.moderator["model"],
+                is_vulnerable=False, 취약유형="N/A",
+                persona_summary="사회자",
+                발화=mod_parsed["발화"], 지목=mod_parsed["지목"]
+            )
+            self.token_logger.log(
+                agent_id="moderator", model=self.moderator["model"],
+                task_type="moderator_opening", target=None,
+                round=0, turn=1, usage=mod_usage
+            )
+
+            for rid in resident_ids:
+                self.agents[rid]["agent"].memory.add_utterance("moderator", mod_parsed["발화"])
+            self.moderator["agent"].memory.add_my_utterance(mod_parsed["발화"])
+
+            self.logger.save()
+            self.token_logger.save()
+            logger.info("Moderator opening speech done")
+
         # Refresh cache after round 0 (initial phase)
         self._refresh_all_caches()
 
@@ -336,6 +391,10 @@ class DebateSimulation:
                         other_agent = self.agents[other_id]["agent"]
                         other_agent.memory.add_utterance(speaker_id, parsed["발화"])
 
+                # Also update moderator's memory
+                if self.use_moderator:
+                    self.moderator["agent"].memory.add_utterance(speaker_id, parsed["발화"])
+
                 # === 3. Other agents react (parallel) ===
                 other_ids = [aid for aid in resident_ids if aid != speaker_id]
 
@@ -345,14 +404,43 @@ class DebateSimulation:
                     response, usage = agent.respond(think_task)
                     return other_id, parse_think(response), usage
 
-                with ThreadPoolExecutor(max_workers=len(other_ids)) as executor:
+                def do_moderator_think():
+                    mod_think_task = get_moderator_think_task(speaker_id, response_code, parsed["발화"])
+                    mod_response, mod_usage = self.moderator["agent"].respond(mod_think_task)
+                    return parse_think(mod_response), mod_usage
+
+                with ThreadPoolExecutor(max_workers=len(other_ids) + 1) as executor:
                     futures = {executor.submit(do_think, oid): oid for oid in other_ids}
+                    mod_future = None
+                    if self.use_moderator:
+                        mod_future = executor.submit(do_moderator_think)
+
                     results = {}
                     usages = {}
                     for future in as_completed(futures):
                         other_id, think_parsed, usage = future.result()
                         results[other_id] = think_parsed
                         usages[other_id] = usage
+
+                    # Process moderator think result
+                    if mod_future:
+                        mod_think_parsed, mod_think_usage = mod_future.result()
+                        self.moderator["agent"].memory.add_my_think(mod_think_parsed["생각"])
+                        self.logger.log_think(
+                            round=round_num, turn=think_turn,
+                            agent_id="moderator",
+                            think_type="moderator_reaction",
+                            상대의견=mod_think_parsed["상대의견"],
+                            반응유형=mod_think_parsed["반응유형"],
+                            생각=mod_think_parsed["생각"]
+                        )
+                        self.token_logger.log(
+                            agent_id="moderator", model=self.moderator["model"],
+                            task_type="moderator_think", target=speaker_id,
+                            round=round_num, turn=think_turn,
+                            usage=mod_think_usage
+                        )
+                        think_turn += 1
 
                 # Process results in order
                 for other_id in other_ids:
@@ -384,7 +472,74 @@ class DebateSimulation:
                 self.logger.save()
                 self.token_logger.save()
 
-            # === 4. End of round reflection (parallel) ===
+            # === 4-A. Moderator round-end summary ===
+            if self.use_moderator:
+                logger.info(f"=== Moderator round {round_num} summary ===")
+                roundend_task = get_moderator_roundend_task(round_num)
+                mod_response, mod_usage = self.moderator["agent"].respond(roundend_task)
+                mod_parsed = parse_response(mod_response)
+
+                mod_code = self.logger.log_debate(
+                    round=round_num, turn=len(resident_ids) + 1,
+                    agent_id="moderator", model=self.moderator["model"],
+                    is_vulnerable=False, 취약유형="N/A",
+                    persona_summary="사회자",
+                    발화=mod_parsed["발화"], 지목=mod_parsed["지목"]
+                )
+                self.token_logger.log(
+                    agent_id="moderator", model=self.moderator["model"],
+                    task_type="moderator_roundend", target=None,
+                    round=round_num, turn=len(resident_ids) + 1,
+                    usage=mod_usage
+                )
+
+                # Add moderator speech to all residents' memory
+                for rid in resident_ids:
+                    self.agents[rid]["agent"].memory.add_utterance("moderator", mod_parsed["발화"])
+                self.moderator["agent"].memory.add_my_utterance(mod_parsed["발화"])
+
+                # Residents think about moderator's summary (parallel)
+                def do_mod_think(rid):
+                    mod_think_task = get_think_task(rid, "moderator", mod_code, mod_parsed["발화"])
+                    agent = self.agents[rid]["agent"]
+                    resp, usg = agent.respond(mod_think_task)
+                    return rid, parse_think(resp), usg
+
+                with ThreadPoolExecutor(max_workers=len(resident_ids)) as executor:
+                    mod_futures = {executor.submit(do_mod_think, rid): rid for rid in resident_ids}
+                    mod_results = {}
+                    mod_usages = {}
+                    for future in as_completed(mod_futures):
+                        rid, tp, usg = future.result()
+                        mod_results[rid] = tp
+                        mod_usages[rid] = usg
+
+                for rid in resident_ids:
+                    tp = mod_results[rid]
+                    if tp["상대의견"] and len(tp["상대의견"]) > 30:
+                        tp["상대의견"] = mod_code
+                    self.agents[rid]["agent"].memory.add_my_think(tp["생각"])
+                    self.logger.log_think(
+                        round=round_num, turn=think_turn,
+                        agent_id=rid,
+                        think_type="moderator_response",
+                        상대의견=tp["상대의견"],
+                        반응유형=tp["반응유형"],
+                        생각=tp["생각"]
+                    )
+                    self.token_logger.log(
+                        agent_id=rid, model=self.agents[rid]["model"],
+                        task_type="moderator_response_think", target="moderator",
+                        round=round_num, turn=think_turn,
+                        usage=mod_usages[rid]
+                    )
+                    think_turn += 1
+
+                self.logger.save()
+                self.token_logger.save()
+                logger.info(f"Moderator round {round_num} summary done")
+
+            # === 4-B. End of round reflection (parallel) ===
             logger.info(f"=== Round {round_num} reflection ===")
 
             def do_reflect(resident_id):
@@ -649,6 +804,18 @@ class DebateSimulation:
 
             rows.append(row)
 
+        if self.use_moderator and self.moderator:
+            rows.append({
+                "resident_id": "moderator",
+                "model": self.moderator["model"],
+                "is_vulnerable": False,
+                "연령대": "", "성별": "", "직업": "", "주거유형": "",
+                "자가여부": "", "매수동기": "", "연소득": "", "거주기간": "",
+                "가구구성": "", "재개발지식": "",
+                "개방성": "", "성실성": "", "외향성": "", "친화성": "", "신경성": "",
+                "initial_stance": "", "vote": ""
+            })
+
         with open(agent_list_path, "w", newline="", encoding="utf-8") as f:
             writer = csv.DictWriter(f, fieldnames=columns)
             writer.writeheader()
@@ -661,6 +828,9 @@ class DebateSimulation:
         refreshed = 0
         for resident_id, agent_data in self.agents.items():
             if agent_data["agent"].refresh_cache():
+                refreshed += 1
+        if self.use_moderator and self.moderator:
+            if self.moderator["agent"].refresh_cache():
                 refreshed += 1
         if refreshed > 0:
             logger.info(f"Refreshed {refreshed} agent caches")

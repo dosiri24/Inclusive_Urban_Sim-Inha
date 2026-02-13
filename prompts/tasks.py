@@ -205,3 +205,45 @@ def get_lv1_vote_task() -> str:
   {"resident_id": "resident_02", "입장": "...", "이유": "..."},
   ...
 ]"""
+
+
+# =============================================================================
+# Moderator Tasks (Lv.4)
+# =============================================================================
+
+
+def get_moderator_opening_task() -> str:
+    """Generate moderator opening speech task."""
+    return """토의를 시작합니다. 사회자로서 개회 발언을 해주세요.
+토의 안건을 간략히 소개하고, 진행 방식을 안내해주세요.
+
+응답 형식:
+{"발화": "개회 발언"}"""
+
+
+def get_moderator_think_task(speaker_id: str, response_code: str, speech: str) -> str:
+    """Generate moderator think task after each resident speech."""
+    speech_preview = speech[:100] if len(speech) > 100 else speech
+    return f"""{speaker_id}의 발화(코드: {response_code}):
+"{speech_preview}"
+
+이 발화를 듣고, 라운드 종료 시 정리 발언에서 다뤄야 할 포인트를 메모하세요.
+4가지 촉진 원칙(다양성 가지치기, 품질 가지치기, 오개념 예방, 논거 보충 요청)의 관점에서 분석하세요.
+
+응답 형식:
+{{"상대의견": "{response_code}", "반응유형": null, "생각": "분석 메모"}}"""
+
+
+def get_moderator_roundend_task(round_num: int) -> str:
+    """Generate moderator round-end summary task."""
+    return f"""{round_num}라운드가 끝났습니다. 사회자로서 이번 라운드를 정리해주세요.
+이번 라운드에서 각 발화를 들으며 메모한 내용을 바탕으로 정리하세요.
+
+4가지 촉진 원칙을 적용하여 정리 발언을 해주세요:
+1. 다양성 가지치기: 아직 다뤄지지 않은 관점이 있다면 언급
+2. 품질 가지치기: 근거가 잘 갖춰진 주장을 부각
+3. 오개념 예방: 잘못 이해된 용어나 개념이 있다면 간단히 바로잡기
+4. 논거 보충 요청: 근거 없이 강한 입장을 보인 주민에게 추가 설명 요청
+
+응답 형식:
+{{"발화": "정리 발언"}}"""
