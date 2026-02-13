@@ -545,8 +545,13 @@ class DebateSimulation:
 
         def cast_vote(resident_id):
             agent = self.agents[resident_id]["agent"]
-            response, usage = agent.respond(vote_task)
-            return resident_id, parse_vote(response), usage
+            for attempt in range(3):
+                response, usage = agent.respond(vote_task)
+                parsed = parse_vote(response)
+                if parsed["입장"] != "무응답":
+                    return resident_id, parsed, usage
+                logger.warning(f"{resident_id} vote returned 무응답, retry {attempt + 1}/2")
+            return resident_id, parsed, usage
 
         with ThreadPoolExecutor(max_workers=len(resident_ids)) as executor:
             futures = {executor.submit(cast_vote, aid): aid for aid in resident_ids}

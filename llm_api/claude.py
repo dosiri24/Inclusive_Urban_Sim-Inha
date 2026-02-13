@@ -67,7 +67,11 @@ class ClaudeLLM(BaseLLM):
         # Build user content: cached portion (stable, with breakpoint) + new portion (changing)
         user_content = []
 
-        cached_tl = prompt_data.get("cached_timeline", "")
+        # Agent path provides "cached_timeline"; planner path only has "timeline"
+        if "cached_timeline" in prompt_data:
+            cached_tl = prompt_data["cached_timeline"]
+        else:
+            cached_tl = prompt_data.get("timeline", "")
         new_tl = prompt_data.get("new_timeline", "")
 
         if cached_tl:

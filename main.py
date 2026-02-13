@@ -33,7 +33,7 @@ if __name__ == "__main__":
         sim.run()
 
     # Lv.3
-    for set_id in range(6, 9):
+    for set_id in range(31, 31):
         sim = DebateSimulation(
             set_id=set_id, level=3, n_rounds=3, n_agents=10, n_vulnerable=2,
             output_dir="outputs/lv3/", 

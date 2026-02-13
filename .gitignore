@@ -13,3 +13,4 @@ pilot_test.md
 analysis/*
 memo
 llm_api/claudecode.py
+hallucination_outputs/

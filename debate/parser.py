@@ -12,9 +12,12 @@ logger = logging.getLogger("debate.parser")
 
 
 def _strip_markdown(text: str) -> str:
-    """Strip markdown code blocks from LLM response."""
+    """Strip markdown code blocks and think tags from LLM response."""
     if text is None:
         return ""
+    text = text.strip()
+    # Remove <think>...</think> blocks (Kimi K2 reasoning output)
+    text = re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL)
     text = text.strip()
     # Remove ```json or ``` wrapper
     if text.startswith("```"):
