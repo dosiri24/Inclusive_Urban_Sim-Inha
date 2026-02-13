@@ -291,10 +291,26 @@ def parse_planner_result(response: str) -> dict:
     try:
         cleaned = _strip_markdown(response)
         parsed = json.loads(cleaned, strict=False)
-        return {
+        result = {
             "논쟁요소": parsed.get("논쟁요소", []),
             "최종합의문": parsed.get("최종합의문", "")
         }
+
+        # Recovery: model sometimes puts entire JSON inside 최종합의문 as string
+        if not result["논쟁요소"] and result["최종합의문"]:
+            try:
+                inner = _strip_markdown(result["최종합의문"])
+                inner_parsed = json.loads(inner, strict=False)
+                if inner_parsed.get("논쟁요소"):
+                    logger.info("Recovered planner result from embedded JSON in 최종합의문")
+                    result = {
+                        "논쟁요소": inner_parsed.get("논쟁요소", []),
+                        "최종합의문": inner_parsed.get("최종합의문", "")
+                    }
+            except (json.JSONDecodeError, AttributeError):
+                pass
+
+        return result
 
     except json.JSONDecodeError as e:
         preview = response[:100] if len(response) > 100 else response

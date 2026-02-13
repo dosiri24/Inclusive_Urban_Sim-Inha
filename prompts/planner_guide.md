@@ -25,5 +25,11 @@ You will receive:
 3. Propose a specific compromise for each issue, referencing concrete figures from the facilitation plan (e.g., ratio, contribution, rental housing ratio) and suggesting modified values where appropriate. When proposing compromises, consider feasibility factors such as legal requirements, project financial viability, and technical constraints. If modifying existing plan figures, explicitly state the trade-offs involved.
 4. Write a final consensus document integrating all compromises. The consensus should read as a revised facilitation plan reflecting resident input.
 
-## Response Format (JSON only, no markdown)
+## Response Rules
+- Respond only in the JSON format below.
+- Do not add any text before or after the JSON.
+- Do not use markdown code blocks (```).
+- All content must be written in Korean (한국어로 작성하세요).
+
+## Response Format
 {"논쟁요소": [{"주제": "issue topic", "주민의견": "summary of resident opinions", "계획안분석": "plan's design rationale and justification", "절충안": "specific compromise proposal with trade-offs"}], "최종합의문": "integrated consensus document covering all compromises"}
