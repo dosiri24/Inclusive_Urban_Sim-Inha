@@ -62,7 +62,8 @@ def run_planner(
         "system": system_prompt,
         "timeline": f"{context_block}[토의 전문]\n{debate_text}\n\n[주민 최종 의견]\n{opinions_text}",
         "new_timeline": "",
-        "task": f"[Task]\n{task}"
+        "task": f"[Task]\n{task}",
+        "max_tokens": 16384
     }
 
     response, usage = llm.chat_with_retry(prompt_data)

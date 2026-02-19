@@ -91,7 +91,7 @@ class ClaudeLLM(BaseLLM):
 
         response = self.client.messages.create(
             model=MODEL_NAME,
-            max_tokens=4096,
+            max_tokens=prompt_data.get("max_tokens", 4096),
             system=[
                 {
                     "type": "text",
